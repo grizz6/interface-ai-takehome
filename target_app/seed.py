@@ -29,6 +29,7 @@ VARIANTS: dict[str, dict[str, Any]] = {
             "session_expired": "Session Expired",
             "error": "System Error",
             "faults": "Fault Console",
+            "loan_servicing": "Loan Servicing",
         },
         "labels": {
             "nav_home": "Home",
@@ -69,6 +70,7 @@ VARIANTS: dict[str, dict[str, Any]] = {
             "confirmed": "The sub-account has been opened.",
             "review_intro": "Review the request below and select Confirm to open the account.",
             "faults_intro": "Arm a runtime fault. It fires once on the next page load, then disarms.",
+            "loan_servicing": "Loan servicing is not available in this console. A sub-account cannot be opened against a loan account.",
         },
         "errors": {
             "member_id_required": "Enter a Member ID.",

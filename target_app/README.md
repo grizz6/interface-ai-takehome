@@ -39,7 +39,7 @@ Each site carries a comment in the template saying which tier it is there to exe
 |---|---|---|
 | 1, role plus accessible name | Member ID field and Search button on `/search`; Account Type, Initial Deposit and Statement Delivery on the sub-account form | Real label association or button text, so role plus name resolves them alone |
 | 2, label text relation | Nickname field on the sub-account form | No label association, no aria-label, no title, no placeholder. It has no accessible name at all. The only thing identifying it is the text in the table cell to its left |
-| 3, container scope plus ordinal | The two Select buttons on the member panel | Identical accessible names in two different account containers. Neither tier 1 nor tier 2 can tell them apart |
+| 3, container scope plus ordinal | The two Select buttons on the member panel | Identical accessible names in two different account containers. Neither tier 1 nor tier 2 can tell them apart. They lead to different screens on purpose, the Deposit one to the sub-account form and the Loan one to loan servicing, so resolving the wrong control is observable rather than silent |
 
 ## Routes
 
@@ -50,6 +50,7 @@ Each site carries a comment in the template saying which tier it is there to exe
 | POST | `/search` | Redirects to member detail, or returns the form with an inline error if the field is empty |
 | GET | `/member/<id>` | Member detail. Hosts the iframe |
 | GET | `/member/<id>/panel` | Iframe content: name, status, branch, both account tables, the two Select buttons, the onclick span |
+| GET | `/member/<id>/loan-servicing` | Where the Loan Accounts Select lands. Not the sub-account form |
 | GET | `/member/<id>/subaccount` | Sub-account form |
 | POST | `/member/<id>/subaccount` | Validates. Review screen on success, form with inline errors on failure |
 | POST | `/member/<id>/subaccount/confirm` | The irreversible step. Issues an account number and shows the confirmation |

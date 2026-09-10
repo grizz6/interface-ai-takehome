@@ -150,6 +150,24 @@ def member_panel(member_id: str) -> str:
     )
 
 
+@app.get("/member/<member_id>/loan-servicing")
+def loan_servicing(member_id: str) -> str:
+    """Where the Loan Accounts Select lands.
+
+    Deliberately NOT the sub-account form. The two Select buttons carry identical
+    accessible names, so tier 3 is the only strategy that can tell them apart, and
+    that claim is only testable if resolving the wrong one goes somewhere visibly
+    different. This screen is that difference.
+    """
+    member, screen = _guard(member_id)
+    if screen is not None:
+        key = "not_found" if screen == "member_not_found.html" else "denied"
+        return render_template(screen, title=_title(key), member_id=member_id)
+    return render_template(
+        "loan_servicing.html", title=_title("loan_servicing"), member=member
+    )
+
+
 # --------------------------------------------------------------------------
 # Flow 2: open sub-account. The confirm step is the irreversible one.
 # --------------------------------------------------------------------------

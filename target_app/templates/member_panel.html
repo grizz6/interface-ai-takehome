@@ -26,7 +26,11 @@
     <!-- LOCATOR TIER 3, control 1 of 2. The Select button below and the one in the
          Loan Accounts block have the SAME accessible name. Neither role plus name
          nor an adjacent label can tell them apart. Only the enclosing container
-         plus ordinal can, which is what tier 3 exists for. -->
+         plus ordinal can, which is what tier 3 exists for.
+         The two lead to DIFFERENT screens on purpose: this one to the sub-account
+         form, the other to loan servicing. Resolving the wrong one is therefore
+         observable, which is what makes the tier 3 claim testable rather than
+         merely asserted. -->
     <table class="acctblock" id="ctl00_ContentPlaceHolder1_pnlDeposits"
            cellpadding="0" cellspacing="0" border="0">
       <tr><td class="blockhead" colspan="3">{{ v.labels.deposit_heading }}</td></tr>
@@ -52,7 +56,9 @@
       </td></tr>
     </table>
 
-    <!-- LOCATOR TIER 3, control 2 of 2. Identical accessible name, different container. -->
+    <!-- LOCATOR TIER 3, control 2 of 2. Identical accessible name, different
+         container, and a different destination. Landing here when the goal was to
+         open a sub-account is the detectable symptom of a mis-resolved locator. -->
     <table class="acctblock" id="ctl00_ContentPlaceHolder1_pnlLoans"
            cellpadding="0" cellspacing="0" border="0">
       <tr><td class="blockhead" colspan="3">{{ v.labels.loan_heading }}</td></tr>
@@ -70,7 +76,7 @@
       {% endfor %}
       <tr><td colspan="3">
         <form method="get" target="_top"
-              action="{{ url_for('subaccount_form', member_id=member.member_id) }}">
+              action="{{ url_for('loan_servicing', member_id=member.member_id) }}">
           <input type="submit" class="btn"
                  id="ctl00_ContentPlaceHolder1_btnSelectLoan"
                  value="{{ v.labels.select }}">

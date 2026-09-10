@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<table class="panel" cellpadding="0" cellspacing="0" border="0">
+  <tr><td class="panelhead">{{ v.titles.loan_servicing }}</td></tr>
+  <tr><td class="panelbody">
+    <table class="noticebox" cellpadding="0" cellspacing="0" border="0">
+      <tr><td id="ctl00_ContentPlaceHolder1_lblLoanServicing">{{ v.messages.loan_servicing }}</td></tr>
+    </table>
+    <table cellpadding="3" cellspacing="0" border="0">
+      <tr>
+        <td class="fieldlabel">{{ v.labels.member_name }}</td>
+        <td>{{ member.name }}</td>
+      </tr>
+    </table>
+    <p><a href="{{ url_for('member_detail', member_id=member.member_id) }}">{{ v.labels.back_to_member }}</a></p>
+  </td></tr>
+</table>
+{% endblock %}
