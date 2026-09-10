@@ -1,28 +1,22 @@
-# secrets and local config
+# secrets
 .env
-.env.local
-*.pem
-*.key
-
-# dependencies and build output
-node_modules/
-dist/
-build/
-*.tsbuildinfo
 
 # python
 __pycache__/
-*.py[cod]
+*.pyc
 .venv/
-venv/
+.pytest_cache/
 
-# tool output that is not curated evidence
-playwright-report/
-test-results/
+# playwright browser data
+.cache/ms-playwright/
+playwright-browsers/
 .playwright/
-*.log
 
-# editor and os
+# generated during development, selectively force-added in phase 9
+evidence/*
+!evidence/.gitkeep
+interventions/*
+!interventions/.gitkeep
+
+# os
 .DS_Store
-.vscode/
-.idea/
