@@ -2,11 +2,11 @@
 
 ## Artifact schema
 
-## Determinism and error handling
+## Determinism & error handling
 
-## Heterogeneity and multi-tenant
+## Heterogeneity & multi-tenant
 
-## Escalation and handoff
+## Escalation & handoff
 
 ## Safety
 
