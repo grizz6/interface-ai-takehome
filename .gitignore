@@ -1,0 +1,28 @@
+# secrets and local config
+.env
+.env.local
+*.pem
+*.key
+
+# dependencies and build output
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# tool output that is not curated evidence
+playwright-report/
+test-results/
+.playwright/
+*.log
+
+# editor and os
+.DS_Store
+.vscode/
+.idea/
