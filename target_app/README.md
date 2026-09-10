@@ -72,6 +72,17 @@ Real exceptional states come from this data, not from a toggle.
 | 100004 | Alan Whitfield | Multiple deposit and loan accounts |
 | anything else, for example 999999 | not seeded | Returns the no member found screen |
 
+**The demo goal uses member 100001.** Both the discovery run and the replay run target that
+record, because it is the only seed member carrying a Savings account, a second deposit
+account, and a populated Loan Accounts container at the same time, which is what the tier 3
+pair on the member panel needs in order to be meaningful.
+
+**Sub-accounts opened through flow 2 persist in module level state, not in a database.** They
+are held in the `OPENED` dict in `app.py` and appear in the member's Deposit Accounts table
+from the moment they are confirmed. They survive for the life of the process and are gone the
+moment the app restarts. Restart the app to return every member to the seeded baseline, and
+expect account numbers to restart at the same value, since the counter is process local too.
+
 Not found and permission denied both return HTTP 200 with a distinct screen rather than a
 404 or a 403. That is on purpose: these are business outcomes, and the automation is meant
 to read the screen rather than the status line, because that is what it will have to do
