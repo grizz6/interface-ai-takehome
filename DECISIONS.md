@@ -33,3 +33,37 @@ the calling thread, which is the awkward part of the escalation seam in invarian
 context has to stay alive and driveable by a human at a moment when Python is not calling into it.
 That forces the control lease to be an explicit, modelled object instead of something that falls
 out of an async event loop for free. Phase 7 is where that cost is paid.
+
+
+## 0002. Real exceptional states and simulated faults are produced by different mechanisms
+
+Phase 1.
+
+The target app produces its exceptional states two different ways. Not found, permission
+denied, and validation failure are real: they fall out of the seed data and the submitted
+input, with no switch involved. Request a member id that was never seeded and you get the
+no member found screen. Request member 100003, whose record carries a restricted flag, and
+you get permission denied. Submit a non-positive initial deposit and the server rejects it
+and returns the form with an inline error. The four conditions on /dev/faults, an unexpected
+interstitial, session expiry, a slow response, and a server error, are simulated instead:
+armed by hand, stored in the Flask session, fired once, then disarmed. The dividing line is
+whether the condition is a property of the data or a property of the runtime.
+
+Rejected: drive all seven from the fault console as uniform toggles. It is a smaller
+mechanism and there would be one place to look. It was rejected because a "record not found"
+produced by a toggle proves nothing about the system under test. Replay would be detecting a
+flag the harness set rather than a condition the application genuinely produced, and the
+distinction between a business outcome and a failure is exactly the one the brief names as
+the most common design mistake. Those three have to arise from data and input or the evidence
+for invariant 5 is circular.
+
+Known weakness of the choice: three, all accepted. The simulated faults fire on GET only,
+so a session expiry in the middle of a form POST, arguably the most realistic and most
+painful version of that condition, cannot be produced at all. That was traded away because
+an interstitial or a redirect fired on a POST discards the submission and leaves the Continue
+control with nothing to resume, which is noise rather than signal. Armed faults live in the
+session cookie, so they are scoped to one browser context, which conveniently keeps
+concurrent runs from disturbing each other but means a fault cannot be armed out of band by
+anything that does not share the cookie jar. And the real states are only as real as the
+seed data: with no database there is no way to produce a genuine mid-transaction failure,
+so that class of error is out of reach of this stand-in entirely.
