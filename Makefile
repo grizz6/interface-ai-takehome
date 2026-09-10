@@ -3,11 +3,11 @@
 # Phase 0 stubs. Each target echoes and exits until its phase lands.
 # The command each one will run is recorded above it.
 
-# run the local target app (variant A on 5000, variant B on 5001)
+# run the local target app (variant A on 8080, variant B on 8081)
 app:
-	@echo "not implemented: target app lands in phase 1"
+	python target_app/app.py
 
-# python -m src.cli discover --goal "..." --target http://localhost:5000
+# python -m src.cli discover --goal "..." --target http://localhost:8080
 discover:
 	@echo "not implemented: discovery loop lands in phase 4"
 

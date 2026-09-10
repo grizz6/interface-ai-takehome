@@ -8,6 +8,15 @@ dependencies = [
     "anthropic",
     "flask",
     "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = [
     "pytest",
     "mypy",
 ]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/models", "src/replay"]
+strict = true
