@@ -5,7 +5,7 @@
 
 # run the local target app (variant A on 8080, variant B on 8081)
 app:
-	python target_app/app.py
+	python3 target_app/app.py
 
 # python -m src.cli discover --goal "..." --target http://localhost:8080
 discover:

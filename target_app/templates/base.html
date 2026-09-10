@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>{{ v.brand }} - {{ title }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<!-- Page chrome is nested tables on purpose. No grid, no flexbox. -->
+<table class="shell" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td class="masthead">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%">
+        <tr>
+          <td class="brand">{{ v.brand }}</td>
+          <td class="console">{{ v.console }}</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td class="navbar">
+      <table cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td class="navcell"><a href="{{ url_for('home') }}">{{ v.labels.nav_home }}</a></td>
+          <td class="navcell"><a href="{{ url_for('search') }}">{{ v.labels.nav_search }}</a></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <tr><td class="content">{% block content %}{% endblock %}</td></tr>
+  <tr><td class="footer">{{ v.footer }}</td></tr>
+</table>
+</body>
+</html>

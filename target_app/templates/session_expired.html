@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<table class="panel" cellpadding="0" cellspacing="0" border="0">
+  <tr><td class="panelhead">{{ v.titles.session_expired }}</td></tr>
+  <tr><td class="panelbody">
+    <table class="errorbox" cellpadding="0" cellspacing="0" border="0">
+      <tr><td id="ctl00_ContentPlaceHolder1_lblSessionExpired">{{ v.messages.session_expired }}</td></tr>
+    </table>
+    <p><a href="{{ url_for('home') }}">{{ v.labels.nav_home }}</a></p>
+  </td></tr>
+</table>
+{% endblock %}

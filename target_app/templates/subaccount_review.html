@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<table class="panel" cellpadding="0" cellspacing="0" border="0">
+  <tr><td class="panelhead">{{ v.titles.subaccount_review }}</td></tr>
+  <tr><td class="panelbody">
+    <p id="ctl00_ContentPlaceHolder1_lblReviewIntro">{{ v.messages.review_intro }}</p>
+    <table cellpadding="4" cellspacing="0" border="0">
+      <tr><td class="fieldlabel">{{ v.labels.member_name }}</td><td>{{ member.name }}</td></tr>
+      <tr><td class="fieldlabel">{{ v.labels.member_id }}</td><td>{{ member.member_id }}</td></tr>
+      <tr><td class="fieldlabel">{{ v.labels.account_type }}</td><td>{{ form.account_type }}</td></tr>
+      <tr><td class="fieldlabel">{{ v.labels.nickname }}</td><td>{{ form.nickname }}</td></tr>
+      <tr><td class="fieldlabel">{{ v.labels.initial_deposit }}</td><td>{{ form.initial_deposit }}</td></tr>
+      <tr><td class="fieldlabel">{{ v.labels.statement_delivery }}</td><td>{{ form.statement }}</td></tr>
+    </table>
+    <form method="post" action="{{ url_for('subaccount_confirm', member_id=member.member_id) }}">
+      <input type="hidden" name="ctl00_ContentPlaceHolder1_ddlAccountType" value="{{ form.account_type }}">
+      <input type="hidden" name="ctl00_ContentPlaceHolder1_txtNickname" value="{{ form.nickname }}">
+      <input type="hidden" name="ctl00_ContentPlaceHolder1_txtInitialDeposit" value="{{ form.initial_deposit }}">
+      <input type="hidden" name="ctl00_ContentPlaceHolder1_ddlStatement" value="{{ form.statement }}">
+      <input type="submit" class="btn"
+             id="ctl00_ContentPlaceHolder1_btnConfirm"
+             value="{{ v.labels.confirm }}">
+    </form>
+  </td></tr>
+</table>
+{% endblock %}

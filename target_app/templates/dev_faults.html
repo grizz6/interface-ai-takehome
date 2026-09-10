@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<table class="panel" cellpadding="0" cellspacing="0" border="0">
+  <tr><td class="panelhead">{{ v.titles.faults }}</td></tr>
+  <tr><td class="panelbody">
+    <p>{{ v.messages.faults_intro }}</p>
+    <p id="ctl00_ContentPlaceHolder1_lblArmed">
+      {% if armed %}{{ v.labels.currently_armed }}: {{ armed }}{% else %}{{ v.labels.none_armed }}{% endif %}
+    </p>
+    <table cellpadding="4" cellspacing="0" border="0">
+      {% for f in faults %}
+      <tr>
+        <td class="fieldlabel">{{ f }}</td>
+        <td>
+          <form method="post" action="{{ url_for('dev_faults_arm') }}">
+            <input type="hidden" name="fault" value="{{ f }}">
+            <input type="submit" class="btn" value="{{ v.labels.arm }} {{ f }}">
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      <tr>
+        <td></td>
+        <td>
+          <form method="post" action="{{ url_for('dev_faults_arm') }}">
+            <input type="hidden" name="fault" value="clear">
+            <input type="submit" class="btn" value="{{ v.labels.clear }}">
+          </form>
+        </td>
+      </tr>
+    </table>
+  </td></tr>
+</table>
+{% endblock %}

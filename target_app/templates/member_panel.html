@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>{{ v.brand }} - {{ title }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="framebody">
+<table cellpadding="6" cellspacing="0" border="0" width="100%">
+  <tr><td>
+
+    <table cellpadding="3" cellspacing="0" border="0">
+      <tr>
+        <td class="fieldlabel">{{ v.labels.member_name }}</td>
+        <td id="ctl00_ContentPlaceHolder1_lblMemberName">{{ member.name }}</td>
+      </tr>
+      <tr>
+        <td class="fieldlabel">{{ v.labels.member_status }}</td>
+        <td id="ctl00_ContentPlaceHolder1_lblStatus">{{ member.status }}</td>
+      </tr>
+      <tr>
+        <td class="fieldlabel">{{ v.labels.member_branch }}</td>
+        <td id="ctl00_ContentPlaceHolder1_lblBranch">{{ member.branch }}</td>
+      </tr>
+    </table>
+
+    <!-- LOCATOR TIER 3, control 1 of 2. The Select button below and the one in the
+         Loan Accounts block have the SAME accessible name. Neither role plus name
+         nor an adjacent label can tell them apart. Only the enclosing container
+         plus ordinal can, which is what tier 3 exists for. -->
+    <table class="acctblock" id="ctl00_ContentPlaceHolder1_pnlDeposits"
+           cellpadding="0" cellspacing="0" border="0">
+      <tr><td class="blockhead" colspan="3">{{ v.labels.deposit_heading }}</td></tr>
+      <tr>
+        <th>{{ v.labels.col_type }}</th>
+        <th>{{ v.labels.col_number }}</th>
+        <th>{{ v.labels.col_balance }}</th>
+      </tr>
+      {% for a in deposits %}
+      <tr>
+        <td>{{ a.type }}</td>
+        <td>{{ a.masked }}</td>
+        <td class="amt">{{ a.balance }}</td>
+      </tr>
+      {% endfor %}
+      <tr><td colspan="3">
+        <form method="get" target="_top"
+              action="{{ url_for('subaccount_form', member_id=member.member_id) }}">
+          <input type="submit" class="btn"
+                 id="ctl00_ContentPlaceHolder1_btnSelectDeposit"
+                 value="{{ v.labels.select }}">
+        </form>
+      </td></tr>
+    </table>
+
+    <!-- LOCATOR TIER 3, control 2 of 2. Identical accessible name, different container. -->
+    <table class="acctblock" id="ctl00_ContentPlaceHolder1_pnlLoans"
+           cellpadding="0" cellspacing="0" border="0">
+      <tr><td class="blockhead" colspan="3">{{ v.labels.loan_heading }}</td></tr>
+      <tr>
+        <th>{{ v.labels.col_type }}</th>
+        <th>{{ v.labels.col_number }}</th>
+        <th>{{ v.labels.col_balance }}</th>
+      </tr>
+      {% for a in member.loan_accounts %}
+      <tr>
+        <td>{{ a.type }}</td>
+        <td>{{ a.masked }}</td>
+        <td class="amt">{{ a.balance }}</td>
+      </tr>
+      {% endfor %}
+      <tr><td colspan="3">
+        <form method="get" target="_top"
+              action="{{ url_for('subaccount_form', member_id=member.member_id) }}">
+          <input type="submit" class="btn"
+                 id="ctl00_ContentPlaceHolder1_btnSelectLoan"
+                 value="{{ v.labels.select }}">
+        </form>
+      </td></tr>
+    </table>
+
+    <!-- The one and only navigation control that is not an anchor or a button.
+         A span with an inline onclick, breaking the frame the way a legacy
+         frameset console does. It has no role, so it is invisible to anything
+         looking for links or buttons. -->
+    <span class="pseudolink" id="ctl00_ContentPlaceHolder1_lnkOpenSub"
+          onclick="window.top.location.href='{{ url_for('subaccount_form', member_id=member.member_id) }}'">{{ v.labels.open_subaccount }}</span>
+
+  </td></tr>
+</table>
+</body>
+</html>

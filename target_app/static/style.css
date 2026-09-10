@@ -1,0 +1,45 @@
+/* Deliberately plain. This app is meant to look like an internal tool from 2004. */
+body { background: #d7d7d7; font-family: Verdana, Geneva, sans-serif; font-size: 11px;
+       color: #1a1a1a; margin: 0; padding: 12px; }
+body.framebody { background: #ffffff; padding: 0; }
+a { color: #00308f; }
+
+table.shell { width: 900px; background: #ffffff; border: 1px solid #808080; }
+td.masthead { background: #003b6f; padding: 8px 10px; }
+td.brand { color: #ffffff; font-size: 15px; font-weight: bold; }
+td.console { color: #b9d2ea; font-size: 10px; text-align: right; }
+td.navbar { background: #e4e4e4; border-bottom: 1px solid #808080; padding: 4px 6px; }
+td.navcell { padding: 2px 12px 2px 0; }
+td.content { padding: 12px; vertical-align: top; }
+td.footer { background: #f0f0f0; border-top: 1px solid #c0c0c0; padding: 6px 10px;
+            color: #666666; font-size: 10px; }
+
+table.panel { width: 100%; border: 1px solid #a8a8a8; }
+td.panelhead { background: #eef2f7; border-bottom: 1px solid #a8a8a8; padding: 5px 8px;
+               font-weight: bold; font-size: 12px; }
+td.panelbody { padding: 10px; vertical-align: top; }
+td.fieldlabel { font-weight: bold; padding-right: 10px; white-space: nowrap;
+                vertical-align: top; }
+
+table.acctblock { border: 1px solid #b8b8b8; margin: 10px 0; width: 100%; }
+td.blockhead { background: #f4f4f4; border-bottom: 1px solid #b8b8b8; padding: 4px 6px;
+               font-weight: bold; }
+table.acctblock th { background: #fafafa; border-bottom: 1px solid #d0d0d0; padding: 4px 6px;
+                     text-align: left; font-size: 10px; }
+table.acctblock td { padding: 4px 6px; border-bottom: 1px solid #ececec; }
+td.amt { text-align: right; }
+
+.btn { font-family: Verdana, sans-serif; font-size: 11px; padding: 2px 10px;
+       border: 1px solid #808080; background: #ececec; }
+.pseudolink { color: #00308f; text-decoration: underline; cursor: pointer; }
+
+div.inlineerror { color: #a10000; font-weight: bold; padding: 2px 0; }
+table.errorbox { border: 2px solid #a10000; background: #fff2f2; width: 100%; margin-bottom: 10px; }
+table.errorbox td { padding: 8px 10px; color: #a10000; font-weight: bold; }
+table.noticebox { border: 2px solid #b07d00; background: #fffaeb; width: 100%; }
+table.noticebox td { padding: 8px 10px; color: #7a5600; font-weight: bold; }
+table.okbox { border: 2px solid #1a6f2a; background: #f1fbf2; width: 100%; margin-bottom: 10px; }
+table.okbox td { padding: 8px 10px; color: #1a6f2a; font-weight: bold; }
+
+iframe.mainframe { width: 100%; height: 430px; border: 1px solid #a8a8a8; }
+.bignumber { font-size: 16px; font-weight: bold; letter-spacing: 1px; }

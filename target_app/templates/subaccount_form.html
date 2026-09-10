@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block content %}
+<table class="panel" cellpadding="0" cellspacing="0" border="0">
+  <tr><td class="panelhead">{{ v.titles.subaccount_form }} - {{ member.name }}</td></tr>
+  <tr><td class="panelbody">
+    {% if errors %}
+    <table class="errorbox" cellpadding="0" cellspacing="0" border="0">
+      <tr><td id="ctl00_ContentPlaceHolder1_lblValidationSummary">
+        {{ errors.values()|list|join(' ') }}
+      </td></tr>
+    </table>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('subaccount_submit', member_id=member.member_id) }}">
+      <table cellpadding="4" cellspacing="0" border="0">
+        <tr>
+          <!-- LOCATOR TIER 1. Real label association. -->
+          <td class="fieldlabel">
+            <label for="ctl00_ContentPlaceHolder1_ddlAccountType">{{ v.labels.account_type }}</label>
+          </td>
+          <td>
+            <select id="ctl00_ContentPlaceHolder1_ddlAccountType"
+                    name="ctl00_ContentPlaceHolder1_ddlAccountType">
+              <option value=""></option>
+              {% for t in v.account_types %}
+              <option value="{{ t }}"{% if form.get('account_type') == t %} selected{% endif %}>{{ t }}</option>
+              {% endfor %}
+            </select>
+            {% if errors.account_type %}<div class="inlineerror">{{ errors.account_type }}</div>{% endif %}
+          </td>
+        </tr>
+        <tr>
+          <!-- LOCATOR TIER 2. This input has no label association, no aria-label, no
+               title and no placeholder, so it has NO accessible name at all. The only
+               thing that identifies it is the text in the table cell to its left.
+               Tier 1 cannot see it. Tier 2, label text relation, is what finds it. -->
+          <td class="fieldlabel">{{ v.labels.nickname }}</td>
+          <td>
+            <input type="text" size="24"
+                   id="ctl00_ContentPlaceHolder1_txtNickname"
+                   name="ctl00_ContentPlaceHolder1_txtNickname"
+                   value="{{ form.get('nickname', '') }}">
+            {% if errors.nickname %}<div class="inlineerror">{{ errors.nickname }}</div>{% endif %}
+          </td>
+        </tr>
+        <tr>
+          <!-- LOCATOR TIER 1. Real label association. -->
+          <td class="fieldlabel">
+            <label for="ctl00_ContentPlaceHolder1_txtInitialDeposit">{{ v.labels.initial_deposit }}</label>
+          </td>
+          <td>
+            <input type="text" size="12"
+                   id="ctl00_ContentPlaceHolder1_txtInitialDeposit"
+                   name="ctl00_ContentPlaceHolder1_txtInitialDeposit"
+                   value="{{ form.get('initial_deposit', '') }}">
+            {% if errors.initial_deposit %}<div class="inlineerror">{{ errors.initial_deposit }}</div>{% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td class="fieldlabel">
+            <label for="ctl00_ContentPlaceHolder1_ddlStatement">{{ v.labels.statement_delivery }}</label>
+          </td>
+          <td>
+            <select id="ctl00_ContentPlaceHolder1_ddlStatement"
+                    name="ctl00_ContentPlaceHolder1_ddlStatement">
+              {% for s in v.statement_options %}
+              <option value="{{ s }}"{% if form.get('statement') == s %} selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>
+            <input type="submit" class="btn"
+                   id="ctl00_ContentPlaceHolder1_btnSubmitRequest"
+                   value="{{ v.labels.submit_request }}">
+          </td>
+        </tr>
+      </table>
+    </form>
+    <p><a href="{{ url_for('member_detail', member_id=member.member_id) }}">{{ v.labels.back_to_member }}</a></p>
+  </td></tr>
+</table>
+{% endblock %}
