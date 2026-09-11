@@ -20,3 +20,10 @@ dev = [
 python_version = "3.11"
 files = ["src/models", "src/replay"]
 strict = true
+
+[tool.pytest.ini_options]
+# Bare `pytest` does not add the repo root to sys.path the way `python -m pytest` does,
+# so `from src.models import ...` fails without this. design rules section 11 says the
+# command is `pytest`, so the fix belongs in config rather than in the Makefile.
+pythonpath = ["."]
+testpaths = ["tests"]
