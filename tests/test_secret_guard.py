@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
@@ -29,6 +30,24 @@ CREDENTIAL_SHAPES: dict[str, re.Pattern[str]] = {
     "aws_access_key": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     "private_key_block": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     "authorization_header": re.compile(r'"[Aa]uthorization"\s*:\s*"[^"]{12,}"'),
+    # Provider agnostic, and the rule that matters most. Every shape above assumes a
+    # vendor format, so a provider whose keys look different slips past all of them. This
+    # one matches the assignment instead: a secret sounding name given a long opaque
+    # value. Added after a real key reached a public commit while every pattern above
+    # stayed silent.
+    # Two shapes, both requiring an actual value rather than an expression. A bare
+    # `secrets = load_secrets()` is code, not a leak, and an earlier draft of this rule
+    # flagged it.
+    "secret_assignment": re.compile(
+        # a quoted literal: "api_key": "abc..." or SECRET = "abc..."
+        r"\b[a-z0-9_]*(?:api[_-]?key|secret|token|password|credential)[a-z0-9_]*"
+        r"[\"']?\s*[=:]\s*[\"'][A-Za-z0-9_\-]{16,}[\"']"
+        r"|"
+        # an env file line: GEMINI_API_KEY=abc...
+        r"^[a-z][a-z0-9_]*(?:api_key|secret|token|password)[a-z0-9_]*"
+        r"=[A-Za-z0-9_\-.~+/=]{16,}\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    ),
 }
 
 
@@ -155,3 +174,119 @@ def test_no_credential_has_reached_evidence_or_capabilities() -> None:
     assert not findings, "credential shaped strings found:\n" + "\n".join(
         str(f) for f in findings
     )
+
+
+def tracked_files() -> list[Path]:
+    """Every file git tracks, which is exactly the set that can become public.
+
+    Uses git rather than a walk, so .venv, caches and the gitignored evidence directory are
+    excluded without maintaining a skip list.
+    """
+    listing = subprocess.run(
+        ["git", "ls-files"], capture_output=True, text=True, check=True
+    ).stdout
+    return [Path(line) for line in listing.splitlines() if Path(line).is_file()]
+
+
+ACKNOWLEDGED: dict[str, str] = {
+    "target_app/app.py": (
+        "Flask session key for the local stand in application. No auth, no real data, and "
+        "the app is never deployed. Changing it breaks nothing and protects nothing."
+    ),
+    "tests/test_cli.py": (
+        "The fabricated value the redaction test passes through --redact and then asserts "
+        "cannot be found. It has to be a literal for the test to mean anything."
+    ),
+}
+"""Files allowed to contain a secret shaped literal, each with the reason.
+
+An explicit, short, reviewable list beats an inline suppression comment: a marker in the code
+can be added by anyone in passing, while an entry here is visible to whoever audits this file
+and has to carry a justification.
+"""
+
+
+def test_every_acknowledged_file_still_exists_and_still_matches() -> None:
+    """Keeps the exception list from rotting into a set of permanent blanket permissions."""
+    stale: list[str] = []
+    for name in ACKNOWLEDGED:
+        path = Path(name)
+        if not path.is_file():
+            stale.append(f"{name}: no longer exists")
+        elif not CREDENTIAL_SHAPES["secret_assignment"].search(
+            path.read_bytes().decode("utf-8", errors="ignore")
+        ):
+            stale.append(f"{name}: no longer matches, so the exception is unnecessary")
+    assert not stale, "the acknowledged list is out of date:\n" + "\n".join(stale)
+
+
+def test_no_tracked_file_carries_a_secret_assignment() -> None:
+    """The check that was missing, and the reason it was missing.
+
+    This guard only ever looked at evidence/ and capabilities/, on the assumption that a leak
+    would happen on the way out of a run. A real key reached a public commit through
+    .env.example instead: a tracked file, never scanned, holding a value that matched none of
+    the vendor specific patterns above.
+
+    Scanning what git tracks closes the first gap. Matching on the shape of the assignment
+    rather than on any vendor's key format closes the second.
+    """
+    findings: list[Finding] = []
+    for path in tracked_files():
+        if str(path) in ACKNOWLEDGED:
+            continue
+        text = path.read_bytes().decode("utf-8", errors="ignore")
+        match = CREDENTIAL_SHAPES["secret_assignment"].search(text)
+        if match:
+            line = text[: match.start()].count("\n") + 1
+            findings.append(Finding(str(path), "secret_assignment", f"line {line}"))
+    assert not findings, "tracked files carry secret shaped assignments:\n" + "\n".join(
+        str(f) for f in findings
+    )
+
+
+def test_the_assignment_rule_catches_what_the_vendor_patterns_missed(tmp_path: Path) -> None:
+    """Regression test for the actual near miss, using a value of the same shape."""
+    root = tmp_path / "evidence"
+    root.mkdir(parents=True)
+    (root / ".env.example").write_text("GEMINI_API_KEY=" + "k7Qx" * 10 + "\n")
+
+    findings = scan([root])
+    assert [f.rule for f in findings] == ["secret_assignment"]
+
+
+def test_the_assignment_rule_stays_quiet_on_templates_and_prose() -> None:
+    rule = CREDENTIAL_SHAPES["secret_assignment"]
+    assert not rule.search("GEMINI_API_KEY=")
+    assert not rule.search("GEMINI_API_KEY=your-key-here")
+    assert not rule.search("# put your GEMINI_API_KEY in .env")
+
+
+def test_no_tracked_env_file_carries_a_value() -> None:
+    """A committed .env template must declare names and nothing else.
+
+    This is the rule that would have caught the real incident, and it needed no knowledge of
+    what a given provider's key looks like. Every shape based rule asks "does this look like a
+    credential", which fails the moment a provider picks an alphabet you did not anticipate.
+    This asks "is a tracked template carrying a value", which has exactly one right answer.
+
+    Only the variable name is reported. The value is never read into a finding, printed, or
+    measured.
+    """
+    findings: list[Finding] = []
+    for path in tracked_files():
+        if not path.name.startswith(".env"):
+            continue
+        text = path.read_bytes().decode("utf-8", errors="ignore")
+        for number, line in enumerate(text.splitlines(), start=1):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            name, _, value = stripped.partition("=")
+            if value.strip().strip("\"'"):
+                findings.append(Finding(str(path), "env_template_carries_a_value", name))
+    assert not findings, (
+        "a committed .env template carries a value, which is how a real key reached a public "
+        "commit:\n" + "\n".join(str(f) for f in findings)
+    )
+
