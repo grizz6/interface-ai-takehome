@@ -69,13 +69,20 @@ class PolicyGate:
         """Host and path rules. Denied patterns always beat allowed ones."""
         parsed = urlparse(url)
         host = parsed.hostname or ""
+        authority = parsed.netloc or ""
         path = parsed.path or "/"
 
+        # Both forms are accepted so an allowlist can be written either way. Listing
+        # "127.0.0.1:8080" pins the port, which is the stricter and usually wanted form;
+        # listing "127.0.0.1" allows any port on that host.
         if host and host not in self.config.allowed_hosts:
-            return Blocked(
-                rule="allowed_hosts",
-                reason=f"host {host!r} is not in the allowlist",
-            )
+            if authority not in self.config.allowed_hosts:
+                return Blocked(
+                    rule="allowed_hosts",
+                    reason=(
+                        f"neither host {host!r} nor {authority!r} is in the allowlist"
+                    ),
+                )
 
         for pattern in self.config.denied_path_patterns:
             if re.search(pattern, path):

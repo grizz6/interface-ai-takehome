@@ -1,0 +1,16 @@
+{
+  "allowed_hosts": ["127.0.0.1:8080", "localhost:8080"],
+  "allowed_path_patterns": [
+    "^/$",
+    "^/search$",
+    "^/member(/.*)?$",
+    "^/maintenance$",
+    "^/maintenance/continue$",
+    "^/session-expired$"
+  ],
+  "denied_path_patterns": ["^/dev(/.*)?$"],
+  "allowed_actions": ["navigate", "click", "type", "select", "press", "wait_for"],
+  "risky_action_policy": "require_approval",
+  "risky_control_names": ["Confirm", "Transfer", "Delete", "Post", "Close Account"],
+  "redact_sensitivities": ["pii", "secret"]
+}
