@@ -18,8 +18,12 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
-from dotenv import load_dotenv
+# Run by path rather than as a module, so the repo root is not on sys.path by default.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from dotenv import load_dotenv  # noqa: E402
 
 DEFAULT_MODEL = "gemini-3-flash-preview"
 PROMPT = "Reply with exactly: wiring ok"
