@@ -67,3 +67,69 @@ concurrent runs from disturbing each other but means a fault cannot be armed out
 anything that does not share the cookie jar. And the real states are only as real as the
 seed data: with no database there is no way to produce a genuine mid-transaction failure,
 so that class of error is out of reach of this stand-in entirely.
+
+## 0003. Three shape decisions in the capability schema
+
+Phase 2. Three related choices about where information lives in the artifact, each with what
+was rejected and what it costs.
+
+### Extraction is declared on outputs, not performed as a step
+
+Reading a value is declared once on `OutputSpec.extraction`. Steps only act. The split is
+between changing the state of the surface and observing it, and it buys three things: the
+return contract is legible in one place, so a calling agent reading the artifact learns what
+it gets back without simulating the step list; replay can extract without walking the steps a
+second time; and a tenant whose confirmation screen puts the account number in a different
+cell is an `output_overrides` entry rather than a re-recorded flow.
+
+Rejected: an `extract` action type, making reading just another step with a named result. It
+is a smaller action model, there is one list to execute rather than two phases, and crucially
+it makes extraction ordering explicit.
+
+Known weakness, and this one is real rather than theoretical: because extraction is declared
+rather than sequenced, every output is read at the same moment, after the last step. A value
+that is only on screen mid-flow, such as a reference number an interstitial shows and the
+next navigation destroys, cannot be captured by this schema at all. If we hit that case the
+fix is an `extract_after_step` field on OutputSpec, not reintroducing an extract action,
+because the declaration is the part worth keeping.
+
+### Checkpoints exist at both step and capability level
+
+`Step.postcondition` asserts that one action did what it claimed. `Capability.checkpoint`
+asserts that the flow as a whole arrived at the goal. Both exist because they fail
+differently and the caller needs to tell those failures apart: a failed postcondition
+localizes the defect to one step index, while a checkpoint that fails after every step passed
+means the steps were individually fine and the flow still did not reach the goal, which is a
+different bug and usually a worse one. This is also why a `risky_irreversible` step is
+required to carry a postcondition. An irreversible action has to prove what it did at the
+moment it did it, not at the end of the run when the evidence may be gone.
+
+Rejected: a capability-level checkpoint only. Less to write and less to keep true, and it is
+defensible that the end state is the only thing a caller really cares about.
+
+Known weakness: two levels is two places to be wrong, and the redundancy is not hypothetical.
+In the test fixture the final step postcondition and the capability checkpoint assert the same
+text, which is duplication, and the schema neither detects nor forbids it. A careless author
+can write a flow whose checkpoint adds nothing at all, and nothing in validation will say so.
+
+### Known outcomes are per capability, not a global catalogue
+
+`BusinessOutcomeSpec` hangs off the Capability. "Member not found" is only meaningful for a
+flow that looks a member up, and the signal that detects it is specific to one screen in one
+application. A global registry would have to be qualified by app and screen anyway, which is
+the same information with an extra lookup in front of it. Keeping them local is also what
+makes the artifact self-describing: one file tells a calling agent every legitimate answer it
+can receive, with no second document to consult.
+
+Rejected: a global outcome catalogue keyed by code, with capabilities referencing codes.
+That guarantees `member_not_found` means the same thing everywhere, makes reporting across
+capabilities trivial, and stops the same detection signal being written out repeatedly.
+
+Known weakness: duplication and drift, which is exactly what the catalogue would have
+prevented. Ten capabilities against the same application will each redeclare
+`member_not_found` with their own detect signal, nothing forces those signals to agree, and
+when the application changes its wording they will fall out of sync one at a time rather than
+all at once. Codes are only conventionally stable too: validation enforces snake_case and
+uniqueness within a single capability and nothing beyond that. If the catalogue becomes
+necessary the migration is mechanical, hoisting shared codes out and leaving per-capability
+detect signals behind as overrides.
