@@ -10,6 +10,7 @@ import re
 from datetime import datetime
 from typing import Annotated, Literal
 
+import yaml
 from pydantic import BaseModel, Field, model_validator
 
 from src.models.common import (
@@ -55,6 +56,22 @@ class Signal(BaseModel):
 
     def _populated(self, *names: str) -> list[str]:
         return [name for name in names if getattr(self, name) is not None]
+
+    @model_validator(mode="after")
+    def _aria_template_is_parseable(self) -> Signal:
+        """Syntax only. See DECISIONS.md 0005 for what this deliberately does not check."""
+        if self.aria_template is None:
+            return self
+        try:
+            yaml.safe_load(self.aria_template)
+        except yaml.YAMLError as exc:
+            raise ValueError(
+                "aria_template is not parseable as YAML, so the artifact was rejected at "
+                f"record time rather than at match time: {exc}. This checks SYNTAX ONLY. "
+                "A template that parses cleanly can still describe a shape that no screen "
+                "will ever have, and that is only discovered when replay tries to match it"
+            ) from exc
+        return self
 
     @model_validator(mode="after")
     def _fields_match_kind(self) -> Signal:

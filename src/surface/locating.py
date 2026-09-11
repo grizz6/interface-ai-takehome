@@ -24,6 +24,7 @@ from src.models.locator import (
     LabelRelationLocator,
     Locator as LocatorSpec,
     RoleNameLocator,
+    TextRelationLocator,
 )
 
 Scope = Page | FrameLocator
@@ -96,6 +97,19 @@ def build(scope: Scope, spec: LocatorSpec) -> Built:
         if spec.name:
             target = cast(Any, container).get_by_role(spec.role, name=spec.name, exact=True)
         return Built(target=target.nth(spec.ordinal), guard=container)
+
+    if isinstance(spec, TextRelationLocator):
+        if spec.container is None:
+            return Built(target=loose.get_by_text(spec.text, exact=spec.exact))
+        heading = xpath_literal(spec.container.heading_text)
+        container = loose.locator(
+            f"xpath=//*[normalize-space(text())={heading}]"
+            f"/ancestor::{spec.container.role}[1]"
+        )
+        return Built(
+            target=cast(Any, container).get_by_text(spec.text, exact=spec.exact),
+            guard=container,
+        )
 
     if isinstance(spec, CssFallbackLocator):
         return Built(target=loose.locator(spec.css))

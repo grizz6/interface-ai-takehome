@@ -31,11 +31,12 @@ from src.models.locator import (
     Locator as LocatorSpec,
     LocatorBundle,
     RoleNameLocator,
+    TextRelationLocator,
 )
 from src.models.policy import PolicyConfig
 from src.policy.gate import Blocked, PolicyGate
 from src.surface.actions import Action, ActionOutcome
-from src.surface.locating import Scope, build, frame_scope
+from src.surface.locating import Built, Scope, build, frame_scope
 from src.surface.observation import Observation, parse_aria_snapshot
 from src.surface.protocol import (
     ActionTimeout,
@@ -54,8 +55,22 @@ class WebSurface:
     """One browser context, one page, for the life of the surface. Invariant 7."""
 
     def __init__(
-        self, config: PolicyConfig, gate: PolicyGate, *, headless: bool = True
+        self,
+        config: PolicyConfig,
+        gate: PolicyGate,
+        *,
+        headless: bool = True,
+        resolve_timeout_ms: int = 5000,
+        poll_ms: int = 100,
+        nav_settle_ms: int = 500,
     ) -> None:
+        # The resolve budget is shared across a whole bundle rather than spent per tier.
+        # Every tier is tried once with no waiting first, so a bundle that resolves on its
+        # primary costs nothing, and a bundle that resolves on nothing costs the budget once
+        # rather than once per tier.
+        self._resolve_timeout_ms = resolve_timeout_ms
+        self._poll_ms = poll_ms
+        self._nav_settle_ms = nav_settle_ms
         self._config = config
         self._gate = gate
         self._pw: Playwright = sync_playwright().start()
@@ -118,10 +133,23 @@ class WebSurface:
         if tier3 is not None:
             candidates.append(tier3)
 
-        verified = [c for c in candidates if self._unique(c, element.frame_path)]
-        tier4 = self._tier_css(element, verified, failures)
-        if tier4 is not None:
-            verified.append(tier4)
+        tier4 = self._tier_text_relation(observation, element, failures)
+        candidates.extend(tier4)
+
+        verified = self._verify(candidates, element.frame_path)
+        tier5 = self._tier_css(element, verified, failures)
+        if tier5 is not None:
+            verified.append(tier5)
+
+        # A bundle may carry each strategy at most once, so keep the first that verified.
+        seen: set[str] = set()
+        deduped: list[LocatorSpec] = []
+        for spec in verified:
+            if spec.strategy in seen:
+                continue
+            seen.add(spec.strategy)
+            deduped.append(spec)
+        verified = deduped
 
         if not verified:
             raise LocatorUnresolved(
@@ -135,8 +163,8 @@ class WebSurface:
             # element rather than quietly recording a flow that hangs off a DOM id.
             raise LocatorUnresolved(
                 f"{element.role!r} ref {ref!r} can only be located by CSS, and the schema "
-                "forbids a brittle primary. This control cannot be recorded durably as "
-                "things stand. Reasons the other tiers failed: " + "; ".join(failures)
+                "forbids a brittle primary. Not even its visible text resolves uniquely. "
+                "Reasons the other tiers failed: " + "; ".join(failures)
             )
 
         return LocatorBundle(
@@ -218,6 +246,34 @@ class WebSurface:
             name=element.name,
         )
 
+    def _tier_text_relation(
+        self, observation: Observation, element: Any, failures: list[str]
+    ) -> list[LocatorSpec]:
+        """Visible text. The only tier that can see a control with no ARIA role.
+
+        Two candidates are offered, unscoped first. Verification keeps whichever resolves
+        uniquely, and describe() keeps only the first per strategy.
+        """
+        if not element.name:
+            failures.append("tier 4 unavailable: element has no visible text")
+            return []
+        candidates: list[LocatorSpec] = [
+            TextRelationLocator(text=element.name, exact=True)
+        ]
+        heading = observation.nearest_heading(element.ref)
+        if heading is not None:
+            container, heading_text = heading
+            candidates.append(
+                TextRelationLocator(
+                    text=element.name,
+                    exact=True,
+                    container=ContainerRef(
+                        heading_text=heading_text, role=container.role
+                    ),
+                )
+            )
+        return candidates
+
     def _tier_css(
         self, element: Any, verified: list[LocatorSpec], failures: list[str]
     ) -> LocatorSpec | None:
@@ -241,43 +297,86 @@ class WebSurface:
             ),
         )
 
-    def _unique(self, spec: LocatorSpec, frame_path: list[str]) -> bool:
+    def _verify(
+        self, specs: list[LocatorSpec], frame_path: list[str]
+    ) -> list[LocatorSpec]:
+        """Every candidate that resolves to exactly one element, waiting if none do yet.
+
+        Zero matches is not believed until the budget expires, because a tier that has not
+        rendered yet is indistinguishable from a tier that does not apply. More than one
+        match is simply not unique here; it is not an error, since that is exactly how
+        tier 1 gets rejected for a control whose name collides.
+        """
+        if not specs:
+            return []
         scope = frame_scope(self._page, frame_path)
-        built = build(scope, spec)
-        if built.guard is not None and built.guard.count() != 1:
-            return False
-        return built.target.count() == 1
+        builts = [(spec, build(scope, spec)) for spec in specs]
+        deadline = time.monotonic() + self._resolve_timeout_ms / 1000
+        while True:
+            unique = [
+                spec
+                for spec, built in builts
+                if not (built.guard is not None and built.guard.count() != 1)
+                and built.target.count() == 1
+            ]
+            if unique or time.monotonic() >= deadline:
+                return unique
+            self._page.wait_for_timeout(self._poll_ms)
 
     # -- resolution ----------------------------------------------------------
     def resolve(self, bundle: LocatorBundle) -> Resolved:
+        """Try each tier in order, waiting before believing that nothing matched.
+
+        The asymmetry is deliberate and it is the whole point of this method.
+
+        Zero matches is not trusted immediately. A page that is still rendering reports zero
+        for a control that is about to exist, and treating that as "this tier does not apply"
+        turns transient slowness into an unresolved error or, worse, a silent slide down to a
+        lower tier. So every tier is retried until a shared budget expires.
+
+        Two or more matches is never waited on and never falls through to a fallback. It is
+        ambiguity, it raises immediately, and invariant 4 says the run stops rather than
+        picking one. Waiting could only ever turn two matches into one by luck, and a
+        fallback that happens to work does not make the ambiguity safe.
+        """
         scope: Scope = frame_scope(self._page, bundle.frame_path)
         tiers: list[LocatorSpec] = [bundle.primary, *bundle.fallbacks]
-        for index, spec in enumerate(tiers):
-            built = build(scope, spec)
-            if built.guard is not None:
-                guards = built.guard.count()
-                if guards > 1:
+        builts: list[tuple[int, LocatorSpec, Built]] = [
+            (index, spec, build(scope, spec)) for index, spec in enumerate(tiers)
+        ]
+        deadline = time.monotonic() + self._resolve_timeout_ms / 1000
+
+        while True:
+            for index, spec, built in builts:
+                if built.guard is not None:
+                    guards = built.guard.count()
+                    if guards > 1:
+                        raise LocatorAmbiguous(
+                            f"{spec.strategy}: container matched {guards} regions, so the "
+                            "ordinal is meaningless. Stopping rather than guessing."
+                        )
+                    if guards != 1:
+                        continue
+                count = built.target.count()
+                if count > 1:
                     raise LocatorAmbiguous(
-                        f"{spec.strategy}: container matched {guards} regions, so the "
-                        "ordinal is meaningless. Stopping rather than guessing."
+                        f"{spec.strategy} matched {count} elements. Invariant 4: the run "
+                        "stops and escalates rather than taking the first match."
                     )
-                if guards == 0:
-                    continue
-            count = built.target.count()
-            if count > 1:
-                raise LocatorAmbiguous(
-                    f"{spec.strategy} matched {count} elements. Invariant 4: the run stops "
-                    "and escalates rather than taking the first match."
-                )
-            if count == 1:
-                return Resolved(
-                    strategy=spec.strategy,
-                    tier_index=index,
-                    handle=built.target,
-                    frame_path=tuple(bundle.frame_path),
-                )
+                if count == 1:
+                    return Resolved(
+                        strategy=spec.strategy,
+                        tier_index=index,
+                        handle=built.target,
+                        frame_path=tuple(bundle.frame_path),
+                    )
+            if time.monotonic() >= deadline:
+                break
+            self._page.wait_for_timeout(self._poll_ms)
+
         raise LocatorUnresolved(
-            "no tier matched: " + ", ".join(s.strategy for s in tiers)
+            "no tier matched after waiting "
+            f"{self._resolve_timeout_ms}ms: " + ", ".join(s.strategy for s in tiers)
         )
 
     # -- action --------------------------------------------------------------
@@ -307,8 +406,9 @@ class WebSurface:
             strategy = resolved.strategy
             handle = cast(PWLocator, resolved.handle)
             if action.kind == "click":
+                previous_url = self._page.url
                 handle.click()
-                self._assert_arrival()
+                self._assert_arrival(previous_url)
             elif action.kind == "type":
                 handle.fill(action.text)
             elif action.kind == "select":
@@ -324,8 +424,23 @@ class WebSurface:
             note=decision.note if not isinstance(decision, Blocked) else None,
         )
 
-    def _assert_arrival(self) -> None:
-        """Re-check the URL after anything that may have navigated. See gate docstring."""
+    def _assert_arrival(self, previous_url: str | None = None) -> None:
+        """Re-check the URL after anything that may have navigated.
+
+        Reading page.url straight after click() races the navigation: the click returns as
+        soon as the event is dispatched, so the URL can still be the one we came from and a
+        click onto a denied route would be checked against the allowed route it left. So the
+        load state is settled first, and when the URL has not moved yet we give it a bounded
+        window to before concluding that the click simply did not navigate.
+        """
+        self._page.wait_for_load_state("load")
+        if previous_url is not None and self._page.url == previous_url:
+            deadline = time.monotonic() + self._nav_settle_ms / 1000
+            while time.monotonic() < deadline and self._page.url == previous_url:
+                self._page.wait_for_timeout(self._poll_ms)
+            if self._page.url != previous_url:
+                self._page.wait_for_load_state("load")
+
         decision = self._gate.check_url(self._page.url)
         if isinstance(decision, Blocked):
             raise PolicyViolation(f"{decision.rule}: {decision.reason}")
@@ -343,7 +458,8 @@ class WebSurface:
     def _await_signal(self, signal: Signal, timeout_ms: int, poll_ms: int) -> None:
         deadline = time.monotonic() + timeout_ms / 1000
         while time.monotonic() < deadline:
-            if self.evaluate(signal):
+            # timeout 0: this loop is already the wait, so the inner check must not wait too
+            if self._evaluate(signal, 0):
                 return
             self._page.wait_for_timeout(poll_ms)
         raise ActionTimeout(
@@ -352,13 +468,17 @@ class WebSurface:
 
     # -- evaluation ----------------------------------------------------------
     def evaluate(self, signal: Signal) -> bool:
+        """Public evaluation waits for an element to appear before reporting it absent."""
+        return self._evaluate(signal, self._resolve_timeout_ms)
+
+    def _evaluate(self, signal: Signal, timeout_ms: int) -> bool:
         if signal.kind is SignalKind.URL_MATCHES:
             return bool(re.search(signal.url_pattern or "", self._page.url))
         if signal.kind in (SignalKind.TEXT_PRESENT, SignalKind.TEXT_ABSENT):
             found = self._text_matches(signal)
             return found if signal.kind is SignalKind.TEXT_PRESENT else not found
         if signal.kind in (SignalKind.ELEMENT_PRESENT, SignalKind.ELEMENT_ABSENT):
-            present = self._element_present(signal)
+            present = self._element_present(signal, timeout_ms)
             return present if signal.kind is SignalKind.ELEMENT_PRESENT else not present
         return self._aria_matches(signal)
 
@@ -377,18 +497,27 @@ class WebSurface:
             return needle in text
         return needle.lower() in text.lower()
 
-    def _element_present(self, signal: Signal) -> bool:
+    def _element_present(self, signal: Signal, timeout_ms: int) -> bool:
+        """Wait for the element to appear before reporting it absent.
+
+        Ambiguity is not raised here: two matches still means present. The invariant 4 rule
+        about never guessing governs acting on an element, not observing that one exists.
+        """
         bundle = signal.locator
         if bundle is None:
             return False
         scope = frame_scope(self._page, bundle.frame_path)
-        for spec in [bundle.primary, *bundle.fallbacks]:
-            built = build(scope, spec)
-            if built.guard is not None and built.guard.count() != 1:
-                continue
-            if built.target.count() >= 1:
-                return True
-        return False
+        builts = [build(scope, spec) for spec in [bundle.primary, *bundle.fallbacks]]
+        deadline = time.monotonic() + timeout_ms / 1000
+        while True:
+            for built in builts:
+                if built.guard is not None and built.guard.count() != 1:
+                    continue
+                if built.target.count() >= 1:
+                    return True
+            if time.monotonic() >= deadline:
+                return False
+            self._page.wait_for_timeout(self._poll_ms)
 
     def _aria_matches(self, signal: Signal) -> bool:
         scope = frame_scope(self._page, signal.frame_path)

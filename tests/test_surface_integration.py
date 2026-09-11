@@ -11,8 +11,8 @@ from typing import Any, cast
 
 import pytest
 
-from src.surface.actions import NavigateAction
-from src.surface.protocol import LocatorAmbiguous
+from src.surface.actions import ClickAction, NavigateAction
+from src.surface.protocol import LocatorAmbiguous, LocatorUnresolved
 from src.surface.web import WebSurface
 
 MEMBER_ID_INPUT = "ctl00_ContentPlaceHolder1_txtMemberId"
@@ -147,7 +147,7 @@ def test_no_ref_from_any_observation_ever_reaches_a_bundle(
 
 
 # -- the finding from the captures: a span with an onclick has no role ----------
-def test_the_onclick_span_cannot_produce_a_role_based_locator(
+def test_the_onclick_span_describes_by_visible_text_and_round_trips(
     surface: Any, live_app: str
 ) -> None:
     observation = _goto(surface, live_app, "/member/100001")
@@ -156,12 +156,148 @@ def test_the_onclick_span_cannot_produce_a_role_based_locator(
     )
     assert not span.role_resolvable
 
-    # Tiers 1 to 3 cannot see it and the schema forbids a brittle primary, so the two
-    # rules collide and describe() refuses rather than recording a DOM id as the primary
-    # way to find a control. See DECISIONS.md 0006.
-    from src.surface.protocol import LocatorUnresolved
+    # Tiers 1 to 3 are all role based and none can see it, but its visible text can.
+    # Before the text_relation tier existed this raised LocatorUnresolved. See 0007.
+    bundle = surface.describe(span.ref)
+    assert bundle.primary.strategy == "text_relation"
+    assert bundle.primary.text == "Open Sub-Account"
+    assert "not an ARIA role" in (bundle.notes or "")
 
-    with pytest.raises(LocatorUnresolved) as exc:
-        surface.describe(span.ref)
-    assert "can only be located by CSS" in str(exc.value)
-    assert "not an ARIA role" in str(exc.value)
+    # and it round trips: the bundle resolves back to the element it was built from
+    assert _dom_id(surface, bundle) == "ctl00_ContentPlaceHolder1_lnkOpenSub"
+
+
+# -- item 1: transient slowness must be waited on, not mistaken for absence ------
+def _arm_fault(surface: Any, base: str, fault: str) -> None:
+    """Arm through the raw page. The operator may reach /dev/, the agent may not."""
+    surface.page.goto(base + "/dev/faults", wait_until="load")
+    surface.page.get_by_role("button", name=f"Arm {fault}").click()
+    surface.page.wait_for_load_state("load")
+
+
+def test_resolution_survives_the_slow_response_fault(surface: Any, live_app: str) -> None:
+    """The /dev/faults slow response, end to end. Resolution must succeed, not fail."""
+    import time as _time
+
+    from src.models.locator import LocatorBundle, RoleNameLocator
+
+    _arm_fault(surface, live_app, "slow")
+    started = _time.monotonic()
+    surface.act(NavigateAction(url=live_app + "/search"))
+    elapsed = _time.monotonic() - started
+    assert elapsed > 4.0, f"the slow fault did not fire, only {elapsed:.1f}s elapsed"
+
+    resolved = surface.resolve(
+        LocatorBundle(primary=RoleNameLocator(role="textbox", name="Member ID"))
+    )
+    assert cast(Any, resolved.handle).get_attribute("id") == MEMBER_ID_INPUT
+
+
+def test_resolution_waits_for_an_element_that_has_not_rendered_yet(
+    surface: Any, live_app: str
+) -> None:
+    """The mechanism itself, made deterministic.
+
+    The slow fault delays the whole response, so by the time goto returns the page is
+    complete and the wait is never exercised. This removes a control and puts it back after
+    a delay, which is what a slow client side render actually looks like to a locator.
+    """
+    from src.models.locator import LocatorBundle, RoleNameLocator
+
+    bundle = LocatorBundle(primary=RoleNameLocator(role="textbox", name="Member ID"))
+
+    def hide_then_restore(delay_ms: int) -> None:
+        surface.page.evaluate(
+            """(ms) => {
+                const el = document.querySelector('#ctl00_ContentPlaceHolder1_txtMemberId');
+                const parent = el.parentNode;
+                el.remove();
+                setTimeout(() => parent.appendChild(el), ms);
+            }""",
+            delay_ms,
+        )
+
+    # with no budget the tier reports zero and the bundle is called unresolved
+    surface.act(NavigateAction(url=live_app + "/search"))
+    hide_then_restore(1200)
+    original = surface._resolve_timeout_ms
+    surface._resolve_timeout_ms = 0
+    try:
+        with pytest.raises(LocatorUnresolved):
+            surface.resolve(bundle)
+    finally:
+        surface._resolve_timeout_ms = original
+
+    # with the budget restored the same situation resolves
+    surface.act(NavigateAction(url=live_app + "/search"))
+    hide_then_restore(1200)
+    resolved = surface.resolve(bundle)
+    assert cast(Any, resolved.handle).get_attribute("id") == MEMBER_ID_INPUT
+
+
+def test_ambiguity_is_never_waited_on(surface: Any, live_app: str) -> None:
+    """Zero is waited on, two is not. Ambiguity must raise fast, not after the budget."""
+    import time as _time
+
+    from src.models.locator import LocatorBundle, RoleNameLocator
+
+    _goto(surface, live_app, "/member/100001")
+    ambiguous = LocatorBundle(
+        primary=RoleNameLocator(role="button", name="Select"), frame_path=["maincontent"]
+    )
+    started = _time.monotonic()
+    with pytest.raises(LocatorAmbiguous):
+        surface.resolve(ambiguous)
+    assert _time.monotonic() - started < 1.0, "ambiguity waited instead of raising"
+
+
+# -- item 2: a click that navigates somewhere denied must be caught --------------
+def test_a_click_that_navigates_to_a_denied_path_is_blocked(
+    surface: Any, live_app: str
+) -> None:
+    """The arrival check must beat the navigation rather than race it.
+
+    Clicking Member Lookup navigates to /search. With /search denied, the click must be
+    caught on arrival. Before the load state was settled, page.url was still the page we
+    came from and this passed straight through.
+
+    The gate is swapped rather than a second WebSurface built, because Playwright's sync API
+    refuses a second instance in one thread.
+    """
+    from src.models.common import ActionType
+    from src.models.locator import LocatorBundle, RoleNameLocator
+    from src.models.policy import PolicyConfig
+    from src.policy.gate import PolicyGate
+    from src.surface.protocol import PolicyViolation
+
+    strict = PolicyConfig(
+        allowed_hosts=["127.0.0.1"],
+        allowed_path_patterns=[r"^/"],
+        denied_path_patterns=[r"^/search"],
+        allowed_actions=[ActionType.NAVIGATE, ActionType.CLICK],
+        risky_action_policy="flag",
+    )
+    original = surface._gate
+    surface.act(NavigateAction(url=live_app + "/"))
+    surface._gate = PolicyGate(strict)
+    try:
+        link = LocatorBundle(primary=RoleNameLocator(role="link", name="Member Lookup"))
+        with pytest.raises(PolicyViolation) as exc:
+            surface.act(ClickAction(bundle=link))
+        assert "denied_path_patterns" in str(exc.value)
+        assert "/search" in str(exc.value)
+        assert "/search" in surface.page.url, "the click did navigate; it was caught on arrival"
+    finally:
+        surface._gate = original
+
+
+# -- item 3: the tier that resolved the conflict --------------------------------
+def test_text_relation_is_permitted_as_a_primary_but_css_is_not() -> None:
+    from pydantic import ValidationError
+
+    from src.models.locator import CssFallbackLocator, LocatorBundle, TextRelationLocator
+
+    assert LocatorBundle(primary=TextRelationLocator(text="Open Sub-Account"))
+    with pytest.raises(ValidationError):
+        LocatorBundle(primary=CssFallbackLocator(css="#x", note="only option"))
+

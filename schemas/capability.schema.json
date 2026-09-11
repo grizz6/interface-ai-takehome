@@ -170,7 +170,7 @@
     },
     "CssFallbackLocator": {
       "additionalProperties": false,
-      "description": "Tier 4. Brittle by construction, which is why `note` is required.",
+      "description": "Tier 5. Brittle by construction, which is why `note` is required.",
       "properties": {
         "brittle": {
           "const": true,
@@ -353,7 +353,8 @@
                 "container_ordinal": "#/$defs/ContainerOrdinalLocator",
                 "css_fallback": "#/$defs/CssFallbackLocator",
                 "label_relation": "#/$defs/LabelRelationLocator",
-                "role_name": "#/$defs/RoleNameLocator"
+                "role_name": "#/$defs/RoleNameLocator",
+                "text_relation": "#/$defs/TextRelationLocator"
               },
               "propertyName": "strategy"
             },
@@ -366,6 +367,9 @@
               },
               {
                 "$ref": "#/$defs/ContainerOrdinalLocator"
+              },
+              {
+                "$ref": "#/$defs/TextRelationLocator"
               },
               {
                 "$ref": "#/$defs/CssFallbackLocator"
@@ -412,7 +416,8 @@
               "container_ordinal": "#/$defs/ContainerOrdinalLocator",
               "css_fallback": "#/$defs/CssFallbackLocator",
               "label_relation": "#/$defs/LabelRelationLocator",
-              "role_name": "#/$defs/RoleNameLocator"
+              "role_name": "#/$defs/RoleNameLocator",
+              "text_relation": "#/$defs/TextRelationLocator"
             },
             "propertyName": "strategy"
           },
@@ -425,6 +430,9 @@
             },
             {
               "$ref": "#/$defs/ContainerOrdinalLocator"
+            },
+            {
+              "$ref": "#/$defs/TextRelationLocator"
             },
             {
               "$ref": "#/$defs/CssFallbackLocator"
@@ -1180,6 +1188,43 @@
       ],
       "title": "SurfaceKind",
       "type": "string"
+    },
+    "TextRelationLocator": {
+      "additionalProperties": false,
+      "description": "Tier 4. For controls that have no ARIA role at all.\n\nA span with an inline onclick is invisible to get_by_role, because the accessibility\ntree reports it as a bare text node with no role. Its visible text is the only durable\nhandle it has, and visible text is still something a human operator reads off the screen,\nwhich is what keeps this above the CSS tier rather than beside it.",
+      "properties": {
+        "container": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContainerRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "exact": {
+          "default": true,
+          "title": "Exact",
+          "type": "boolean"
+        },
+        "strategy": {
+          "const": "text_relation",
+          "default": "text_relation",
+          "title": "Strategy",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "TextRelationLocator",
+      "type": "object"
     },
     "ValueType": {
       "enum": [

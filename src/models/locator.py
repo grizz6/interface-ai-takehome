@@ -62,8 +62,25 @@ class ContainerOrdinalLocator(BaseModel):
     name: str | None = None
 
 
+class TextRelationLocator(BaseModel):
+    """Tier 4. For controls that have no ARIA role at all.
+
+    A span with an inline onclick is invisible to get_by_role, because the accessibility
+    tree reports it as a bare text node with no role. Its visible text is the only durable
+    handle it has, and visible text is still something a human operator reads off the screen,
+    which is what keeps this above the CSS tier rather than beside it.
+    """
+
+    model_config = STRICT
+
+    strategy: Literal["text_relation"] = "text_relation"
+    text: str
+    exact: bool = True
+    container: ContainerRef | None = None
+
+
 class CssFallbackLocator(BaseModel):
-    """Tier 4. Brittle by construction, which is why `note` is required."""
+    """Tier 5. Brittle by construction, which is why `note` is required."""
 
     model_config = STRICT
 
@@ -74,7 +91,11 @@ class CssFallbackLocator(BaseModel):
 
 
 Locator = Annotated[
-    RoleNameLocator | LabelRelationLocator | ContainerOrdinalLocator | CssFallbackLocator,
+    RoleNameLocator
+    | LabelRelationLocator
+    | ContainerOrdinalLocator
+    | TextRelationLocator
+    | CssFallbackLocator,
     Field(discriminator="strategy"),
 ]
 
@@ -98,7 +119,9 @@ class LocatorBundle(BaseModel):
         if self.primary.strategy == "css_fallback":
             raise ValueError(
                 "locator bundle primary must not use the css_fallback strategy: "
-                "a brittle selector may be a fallback, never the first choice"
+                "a brittle selector may be a fallback, never the first choice. It is the "
+                "only strategy forbidden as a primary; text_relation is permitted, because "
+                "visible text is something a human reads rather than a generated attribute"
             )
         return self
 

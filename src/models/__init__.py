@@ -51,6 +51,7 @@ from src.models.locator import (
     Locator,
     LocatorBundle,
     RoleNameLocator,
+    TextRelationLocator,
 )
 from src.models.policy import PolicyConfig
 from src.models.results import (
@@ -87,6 +88,7 @@ __all__ = [
     "Locator",
     "LocatorBundle",
     "RoleNameLocator",
+    "TextRelationLocator",
     # capability artifact
     "Assertion",
     "BusinessOutcomeSpec",
