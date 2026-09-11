@@ -439,3 +439,76 @@ is which. A reader six months from now sees one flat list and cannot tell that
 `/session-expired` is load bearing for escalation rather than a leftover. A `reason` field per
 pattern would fix it and would also make the file self documenting, at the cost of no longer
 being a direct `PolicyConfig` dump, which is what currently gives validation at load for free.
+
+## 0010. No wait tool is offered to the model
+
+Phase 4, step 2.
+
+The model gets eight tools and none of them waits. There is no `wait`, no `sleep`, no
+`wait_for_text`. This is deliberate and the prompt says so in as many words, because a model
+that has been trained on browser automation will expect one and will otherwise invent reasons
+its absence is a problem.
+
+Waiting is the surface's job and it is already done there, bounded and configurable.
+`resolve()` retries every tier against a shared budget before it will believe that nothing
+matched, and `act()` settles the load state before returning. By the time a tool result comes
+back, the page has settled and any control that was going to appear has appeared. So a wait
+tool would not add a capability, it would duplicate one that already exists a layer down,
+where it is enforced rather than requested.
+
+The reason to actively withhold it rather than merely not need it is that it is an attractive
+nuisance. A discovery run has a step budget. A model that is uncertain what it is looking at
+has an obvious escape hatch in waiting, and waiting always appears to be progress: it is
+cheap, it never errors, and it postpones the decision. The failure mode is a run that spends
+eight of its twenty steps waiting and then hits max_steps without ever having tried the second
+route. Removing the tool forces the uncertainty to resolve into either look or a different
+action, both of which produce information.
+
+Rejected: expose a bounded wait, capped at a couple of seconds, on the grounds that the model
+sometimes knows something the surface cannot, such as a progress spinner it can see in the
+snapshot. That is a real case. It was rejected because the same information is better used
+differently: seeing a spinner should make the model call look again, which costs the same
+turn and returns an actual observation rather than a delay. The tool would have been a worse
+version of one we already have.
+
+Known weakness: this holds only while the surface's waiting stays correct and bounded. If a
+future surface has a genuinely asynchronous update that `resolve()` cannot see, because
+nothing changes in the accessibility tree until a websocket delivers, then the model will have
+no recourse at all and will look, see the same screen, and eventually give up. The honest fix
+at that point is to extend the surface's wait conditions, not to hand the problem to the
+model. This entry is where to start reading if that day comes.
+
+## 0011. The model points at refs, it never authors a locator
+
+Phase 4, step 2.
+
+No tool schema exposed to the model contains a LocatorBundle, or any field that could carry
+one, even though the artifact models the schemas are derived from are full of them.
+`finish` takes a `ref` where OutputSpec takes an extraction locator, and its checkpoint offers
+only the four Signal kinds that need no locator. The model says which element it means by
+ref; `describe()` converts that ref into a durable bundle, choosing the tier and verifying it
+resolves, before anything is recorded.
+
+The reason is where the decision then lives. Locator tier selection is the load bearing
+judgment in this whole system: it decides whether a recording still works next month, and it
+is the thing the evaluation criteria name first. If the model authors locators, that judgment
+moves into the prompt, where it is a request that a model may ignore, misunderstand, or
+cheerfully hallucinate a plausible looking CSS selector for. Keeping it in `describe()` puts
+it in Python, where every candidate is checked against the live page before it is written
+down. It is the same argument invariant 3 makes about the policy gate, applied to locators.
+
+Rejected: let the model propose a locator and have the surface validate it, refusing anything
+that does not resolve uniquely. This is not a bad design. It would let the model contribute
+its reading of the page, which is genuinely useful for controls whose best handle is not
+obvious. It was rejected on the cost of the failure case: a proposal that validates is not the
+same as a proposal that is durable, and the model has no way to know that
+`#ctl00_ContentPlaceHolder1_lnkOpenSub` resolves today and rots next release, while
+`describe()` knows because tier order encodes exactly that.
+
+Known weakness: the model can still point at the wrong element, and nothing here catches that.
+A ref names one node in a snapshot the model may have misread, and `describe()` will faithfully
+build a perfect durable locator for the wrong control. The tier machinery guarantees that
+whatever was pointed at can be found again, not that it was the right thing. What catches that
+is the checkpoint, which is also model authored, so a run can be confidently and consistently
+wrong end to end. Phase 9 is where that gets tested rather than argued, and it is the reason
+evidence is worth more than any assertion in this file.
