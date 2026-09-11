@@ -227,12 +227,15 @@ ordinary step postconditions, where it would convert every cosmetic change into 
 failure. Nothing in the schema enforces that placement. It is a convention, and validation
 will cheerfully accept an `aria_matches` postcondition on all six steps of a flow.
 
-The second is an honest contradiction with 0004. `aria_template` is typed as a plain string,
-so a malformed template is accepted at record time and only discovered when replay tries to
-match it. That is precisely the failure mode 0004 exists to prevent, and the reason it stands
-is that Playwright exposes no public parser for the aria template dialect, so there is nothing
-to validate against short of writing one. The gap is real and is recorded here rather than
-quietly carried.
+The second was an honest contradiction with 0004, and it has since been narrowed rather than
+closed. `aria_template` is now parsed with `yaml.safe_load` during schema validation, so a
+template that is not well formed YAML is rejected at record time like every other defect that
+is knowable from the artifact alone. What remains uncovered is semantics: a template can parse
+perfectly and still describe a shape no screen will ever have, and that is only discovered when
+replay tries to match it. The line falls there because Playwright exposes no public parser for
+the aria template dialect, so syntax is checkable with an ordinary YAML parser while validity
+is not checkable without reimplementing their matcher. The error message says which of the two
+it checked, so nobody reads a clean construction as proof the template is correct.
 
 ## 0006. Where describe() lives, and why XPath here is not a CSS fallback
 
@@ -296,7 +299,7 @@ expression names a `tr`, which is HTML specific, so tier 2 is semantic in intent
 in implementation. That seam is precisely where a desktop surface will need its own code rather
 than a shared one.
 
-### An unresolved conflict this phase surfaced, not resolved
+### A conflict this phase surfaced, since resolved in 0007
 
 An element whose only available locator is CSS cannot currently be recorded at all. The one real
 example is the navigation control implemented as a span with an inline onclick: it has no ARIA
@@ -314,3 +317,52 @@ the target application, which in the real environment means asking a vendor and 
 a text relation tier that can address role-less elements by their visible text and their
 position relative to a named neighbour. The third is probably the right answer, and it is a
 schema change, which is why it is a proposal here rather than a commit.
+
+**Resolved in 0007.** The third option was taken.
+
+## 0007. A text relation tier, resolving the conflict left open in 0006
+
+Phase 3 correction.
+
+`TextRelationLocator` addresses a control by its visible text, optionally scoped to a named
+container, and it is permitted as a bundle primary. The tier order is now role_name,
+label_relation, container_ordinal, text_relation, css_fallback, and `css_fallback` is the only
+strategy still forbidden as a primary. The onclick span that could not be described at all now
+describes as a text_relation primary and resolves back to the same element.
+
+Visible text was chosen over the two alternatives 0006 listed. Permitting a brittle primary
+would have meant approved artifacts resting on `#ctl00_ContentPlaceHolder1_lnkOpenSub`, a string
+that exists only because a framework generated it and that changes when someone reorders a
+content placeholder; the schema forbids that for good reason and bending the rule for one
+awkward control is how such rules stop meaning anything. Fixing the target application is the
+right answer in a repository you own and is not available in the environment this stands in
+for, where the application belongs to a vendor and the answer to "please add a role attribute"
+is a support ticket and a release cycle. Visible text is the only remaining handle that a human
+operator would actually use, which is the same standard the other tiers are held to.
+
+It sits below container_ordinal rather than above it, and that ordering is the part worth
+defending. Text is the most human-legible handle and also the least structural one. A role plus
+an accessible name is a contract the application makes with assistive technology; a container
+plus an ordinal is a statement about layout that survives copy changes entirely. Visible text
+survives neither a rewording nor a translation. So text goes below anything structural and
+above only the CSS tier, and it is reached exactly when the accessibility tree has nothing to
+offer. Ordering it above container_ordinal would have meant preferring the more fragile handle
+whenever both applied, which is the wrong default even though text reads better in a diff.
+
+Rejected: a dedicated `role_missing` tier that matched on text plus the element's position
+among its siblings, which would survive a rewording. It was rejected as premature. It needs a
+sibling index, which is the same brittleness as an ordinal without the container to anchor it,
+and there is exactly one control in the target application that needs this tier at all. One
+example is not enough evidence to design a compound strategy around.
+
+Known weakness: text is precisely what tenant rebranding changes. Section 1 of the brief
+describes hundreds of institutions running the same vendor product "configured, branded, and
+versioned differently", and relabelling controls is the most common thing such configuration
+does. A bundle whose primary is text_relation is therefore the single most likely kind of
+bundle to need a per-variant override, and worse, it will fail in the quietest way: the control
+is still there, still in the same place, still doing the same thing, and the locator no longer
+matches because someone changed "Open Sub-Account" to "New Sub-Account". Two mitigations exist
+and neither is built yet. `VariantOverride.step_overrides` can already carry a replacement
+bundle per tenant, which handles it once discovered. And because the winning tier is recorded
+on every run, a fleet-wide report of text_relation primaries is the natural place to look first
+when a tenant upgrade breaks a batch of capabilities.
