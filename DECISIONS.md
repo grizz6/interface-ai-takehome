@@ -133,3 +133,52 @@ all at once. Codes are only conventionally stable too: validation enforces snake
 uniqueness within a single capability and nothing beyond that. If the catalogue becomes
 necessary the migration is mechanical, hoisting shared codes out and leaving per-capability
 detect signals behind as overrides.
+
+## 0004. Anything knowable at record time is rejected at record time
+
+Phase 2 correction.
+
+The validators added across phase 2 share one principle, and it is worth stating on its own
+because it is what decides whether a rule belongs in the schema at all: if a defect can be
+detected from the artifact alone, the schema refuses the artifact rather than leaving the
+executor to discover it. A regex is compiled when the capability is constructed. A business
+outcome that says it checks after step 9 is rejected when only six steps exist. A recovery
+scoped to a step index nobody declared is rejected the same way. So is a required input
+nothing references, a risky step with nothing to prove it happened, and a sensitive parameter
+carrying an example value.
+
+The reason is the approval model, not tidiness. A capability moves from draft to approved
+because a person read it and signed it off, and from then on it replays unattended. An
+artifact that passes that review and then fails the first time the executor reaches step four
+has broken the thing approval was supposed to buy: the reviewer had no way to catch the
+defect, and the failure surfaces in production against a live banking system rather than at a
+desk. Every rule moved earlier turns a production incident into a construction error.
+
+Rejected: validate lazily, and let the replay engine report a bad pattern or a dangling step
+index as an ordinary Failure result. It is less schema code, the executor already has to
+handle runtime errors so the path exists anyway, and it keeps the models closer to plain data.
+It was rejected because it puts the cost in the worst possible place. A Failure at replay time
+is expensive to diagnose, arrives with a half-finished flow behind it, and for an
+irreversible step may arrive after the damage is done, while the same defect at record time
+costs one line of output and no side effects at all.
+
+Known weakness, three of them and the second is the sharpest.
+
+First, the principle has a hard ceiling. It catches internal inconsistency only, never
+divergence between the artifact and the live surface. A locator naming a control that was
+renamed last Tuesday is perfectly valid to this schema and will still fail at replay. Record
+time validation is not a substitute for the fingerprint and drift work, it is a different
+guarantee that happens to look similar.
+
+Second, the published JSON Schema cannot express most of these rules, and re-exporting after
+adding regex compilation produced a byte identical file. `AfterValidator` and the cross field
+model validators are runtime constraints with no JSON Schema equivalent, so anything
+validating an artifact against `schemas/capability.schema.json` alone will accept artifacts
+that Pydantic rejects. The exported schema is a documentation and codegen aid; the Python
+model is the enforcement boundary, and any consumer that needs the real contract has to go
+through the model rather than the schema file.
+
+Third, there is a coverage gap in this pass that is worth naming rather than quietly
+carrying: `ParamSpec.pattern` is also a user supplied regex and is not yet compiled at record
+time, because only `Signal.pattern`, `Signal.url_pattern` and `ExtractionSpec.strip_pattern`
+were in scope. The same principle applies to it and it should get the same treatment.
