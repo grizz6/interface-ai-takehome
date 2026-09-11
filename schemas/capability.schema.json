@@ -754,6 +754,19 @@
       "additionalProperties": false,
       "description": "An observable condition on a surface.\n\nOne signal type serves checkpoints, business outcome detection, recovery triggers and\nwaits, so that \"how do we know we are there\" is expressed one way everywhere.",
       "properties": {
+        "aria_template": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Partial aria snapshot in Playwright YAML form, for aria_matches.",
+          "title": "Aria Template"
+        },
         "case_sensitive": {
           "default": false,
           "title": "Case Sensitive",
@@ -829,7 +842,8 @@
         "text_absent",
         "url_matches",
         "element_present",
-        "element_absent"
+        "element_absent",
+        "aria_matches"
       ],
       "title": "SignalKind",
       "type": "string"
@@ -1102,6 +1116,19 @@
       "additionalProperties": false,
       "description": "What the surface looked like when the flow was recorded.\n\nThe drift detector for multi-tenant reuse: if the fingerprint no longer matches, the\nartifact may still be correct for a different tenant but should not be trusted silently.",
       "properties": {
+        "aria_template": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Aria snapshot of the landmark chrome as recorded, for structural drift.",
+          "title": "Aria Template"
+        },
         "brand_text": {
           "anyOf": [
             {

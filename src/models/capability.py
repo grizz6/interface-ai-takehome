@@ -46,29 +46,36 @@ class Signal(BaseModel):
     pattern: RegexPattern = None
     url_pattern: RegexPattern = None
     locator: LocatorBundle | None = None
+    aria_template: str | None = Field(
+        default=None,
+        description="Partial aria snapshot in Playwright YAML form, for aria_matches.",
+    )
     frame_path: list[str] = Field(default_factory=list)
     case_sensitive: bool = False
+
+    def _populated(self, *names: str) -> list[str]:
+        return [name for name in names if getattr(self, name) is not None]
 
     @model_validator(mode="after")
     def _fields_match_kind(self) -> Signal:
         text_kinds = {SignalKind.TEXT_PRESENT, SignalKind.TEXT_ABSENT}
-        element_kinds = {SignalKind.ELEMENT_PRESENT, SignalKind.ELEMENT_ABSENT}
 
         if self.kind in text_kinds:
             if self.text is None and self.pattern is None:
                 raise ValueError(f"signal {self.kind} requires text or pattern")
-            extra = [n for n, x in (("url_pattern", self.url_pattern), ("locator", self.locator))
-                     if x is not None]
+            extra = self._populated("url_pattern", "locator", "aria_template")
         elif self.kind is SignalKind.URL_MATCHES:
             if self.url_pattern is None:
                 raise ValueError(f"signal {self.kind} requires url_pattern")
-            extra = [n for n, x in (("text", self.text), ("pattern", self.pattern),
-                                    ("locator", self.locator)) if x is not None]
+            extra = self._populated("text", "pattern", "locator", "aria_template")
+        elif self.kind is SignalKind.ARIA_MATCHES:
+            if self.aria_template is None:
+                raise ValueError(f"signal {self.kind} requires aria_template")
+            extra = self._populated("text", "pattern", "url_pattern", "locator")
         else:
             if self.locator is None:
                 raise ValueError(f"signal {self.kind} requires locator")
-            extra = [n for n, x in (("text", self.text), ("pattern", self.pattern),
-                                    ("url_pattern", self.url_pattern)) if x is not None]
+            extra = self._populated("text", "pattern", "url_pattern", "aria_template")
 
         if extra:
             raise ValueError(
@@ -279,6 +286,10 @@ class SurfaceFingerprint(BaseModel):
     title: str | None = None
     brand_text: str | None = None
     landmark_signals: list[Signal] = Field(default_factory=list)
+    aria_template: str | None = Field(
+        default=None,
+        description="Aria snapshot of the landmark chrome as recorded, for structural drift.",
+    )
     captured_at: datetime
 
 

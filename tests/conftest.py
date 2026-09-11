@@ -213,7 +213,14 @@ def valid_capability(**overrides: Any) -> Capability:
             fingerprint=SurfaceFingerprint(
                 title="Cedar Ridge Credit Union - Member Detail",
                 brand_text="Cedar Ridge Credit Union",
-                landmark_signals=[text_signal("Member Services Console")],
+                landmark_signals=[
+                    text_signal("Member Services Console"),
+                    Signal(
+                        kind=SignalKind.ARIA_MATCHES,
+                        aria_template='- heading "Member Detail"',
+                    ),
+                ],
+                aria_template='- banner:\n  - text "Cedar Ridge Credit Union"',
                 captured_at=datetime(2026, 9, 10, 12, 0, tzinfo=UTC),
             ),
         ),

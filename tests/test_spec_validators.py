@@ -142,3 +142,101 @@ def test_valid_regexes_pass_through_untouched() -> None:
 def test_a_none_pattern_is_still_legal() -> None:
     assert Signal(kind=SignalKind.TEXT_PRESENT, text="Member Detail").pattern is None
 
+
+# -- aria_matches: assert the shape of a screen, not one string -----------------
+def test_an_aria_signal_requires_a_template() -> None:
+    with pytest.raises(ValidationError) as exc:
+        Signal(kind=SignalKind.ARIA_MATCHES)
+    assert_error(exc, "requires aria_template")
+
+
+def test_an_aria_signal_may_not_also_carry_text() -> None:
+    with pytest.raises(ValidationError) as exc:
+        Signal(
+            kind=SignalKind.ARIA_MATCHES,
+            aria_template='- heading "Sub-Account Opened"',
+            text="Sub-Account Opened",
+        )
+    assert_error(exc, "must not populate text")
+
+
+def test_a_text_signal_may_not_carry_an_aria_template() -> None:
+    with pytest.raises(ValidationError) as exc:
+        Signal(
+            kind=SignalKind.TEXT_PRESENT,
+            text="Member Detail",
+            aria_template='- heading "Member Detail"',
+        )
+    assert_error(exc, "must not populate aria_template")
+
+
+def test_an_element_signal_may_not_carry_an_aria_template() -> None:
+    with pytest.raises(ValidationError) as exc:
+        Signal(
+            kind=SignalKind.ELEMENT_PRESENT,
+            locator=role_name_bundle("button", "Confirm"),
+            aria_template='- button "Confirm"',
+        )
+    assert_error(exc, "must not populate aria_template")
+
+
+def test_a_url_signal_may_not_carry_an_aria_template() -> None:
+    with pytest.raises(ValidationError) as exc:
+        Signal(
+            kind=SignalKind.URL_MATCHES,
+            url_pattern=r"^/member/\d+$",
+            aria_template='- heading "Member Detail"',
+        )
+    assert_error(exc, "must not populate aria_template")
+
+
+def test_a_valid_aria_signal_is_accepted() -> None:
+    signal = Signal(
+        kind=SignalKind.ARIA_MATCHES,
+        aria_template='- heading "Sub-Account Opened"\n- text "New Account Number"',
+    )
+    assert signal.aria_template is not None
+    assert signal.text is None
+
+
+def test_every_signal_kind_has_a_branch_in_the_exclusivity_validator() -> None:
+    """Adding a SignalKind without extending the validator fails here, not at replay."""
+    builders = {
+        SignalKind.TEXT_PRESENT: lambda: Signal(kind=SignalKind.TEXT_PRESENT, text="x"),
+        SignalKind.TEXT_ABSENT: lambda: Signal(kind=SignalKind.TEXT_ABSENT, text="x"),
+        SignalKind.URL_MATCHES: lambda: Signal(kind=SignalKind.URL_MATCHES, url_pattern="^/x$"),
+        SignalKind.ELEMENT_PRESENT: lambda: Signal(
+            kind=SignalKind.ELEMENT_PRESENT, locator=role_name_bundle("button", "Go")
+        ),
+        SignalKind.ELEMENT_ABSENT: lambda: Signal(
+            kind=SignalKind.ELEMENT_ABSENT, locator=role_name_bundle("button", "Go")
+        ),
+        SignalKind.ARIA_MATCHES: lambda: Signal(
+            kind=SignalKind.ARIA_MATCHES, aria_template="- button \"Go\""
+        ),
+    }
+    assert set(builders) == set(SignalKind), "a SignalKind has no construction path here"
+    for kind, build in builders.items():
+        assert build().kind is kind
+
+
+def test_surface_fingerprint_carries_an_aria_template() -> None:
+    from src.models import SurfaceFingerprint
+    from datetime import UTC, datetime
+
+    fingerprint = SurfaceFingerprint(
+        aria_template='- banner:\n  - text "Cedar Ridge Credit Union"',
+        captured_at=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    assert fingerprint.aria_template is not None
+
+
+def test_policy_config_risky_control_names_defaults_empty_and_accepts_names() -> None:
+    from src.models import PolicyConfig
+
+    assert PolicyConfig(risky_action_policy="block").risky_control_names == []
+    configured = PolicyConfig(
+        risky_action_policy="require_approval", risky_control_names=["Confirm", "Authorize"]
+    )
+    assert configured.risky_control_names == ["Confirm", "Authorize"]
+

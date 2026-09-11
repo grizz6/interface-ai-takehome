@@ -37,6 +37,13 @@ class PolicyConfig(BaseModel):
     denied_path_patterns: list[str] = Field(default_factory=list)
     allowed_actions: list[ActionType] = Field(default_factory=list)
     risky_action_policy: Literal["block", "require_approval", "flag"]
+    risky_control_names: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Accessible names of controls whose activation counts as risky and irreversible "
+            "during discovery, when no recorded Step risk classification exists yet."
+        ),
+    )
     redact_sensitivities: list[Sensitivity] = Field(
         default_factory=lambda: [Sensitivity.PII, Sensitivity.SECRET]
     )

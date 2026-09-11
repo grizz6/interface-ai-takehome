@@ -90,6 +90,7 @@ class SignalKind(StrEnum):
     URL_MATCHES = "url_matches"
     ELEMENT_PRESENT = "element_present"
     ELEMENT_ABSENT = "element_absent"
+    ARIA_MATCHES = "aria_matches"
 
 
 class RecoveryAction(StrEnum):
