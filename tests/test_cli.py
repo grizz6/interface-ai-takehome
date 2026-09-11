@@ -5,12 +5,19 @@ browser and Playwright's sync API refuses a second instance in one thread. And t
 is part of the contract: a caller branches on it without parsing stdout, so the thing worth
 asserting is the code the process actually returned.
 
-No network: every run here goes through --dry-run.
+EVERY shell out asserts the return code first, and the failure message carries stderr. A
+subprocess that dies otherwise surfaces as a TypeError on None several lines downstream, which
+tells you nothing about what went wrong. That is the same expected versus observed standard the
+FailureResult contract requires of the system, and a test suite that does not hold itself to it
+has no business asserting it elsewhere.
+
+No network: every run here goes through --dry-run. No run writes into the repository's
+evidence/ directory; every one is given a temporary path.
 """
 from __future__ import annotations
 
 import json
-import shutil
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +28,29 @@ from src.models.results import EXIT_CODES
 from test_secret_guard import scan
 
 SECRET = "MEMBER-SUPERSECRET-98765"
+RUN_ID = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
+
+
+def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "src.cli", *args],
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+
+
+def assert_exit(
+    result: subprocess.CompletedProcess[str], expected: int, what: str
+) -> None:
+    """Assert the exit code, and say what was observed when it is wrong."""
+    assert result.returncode == expected, (
+        f"{what}\n"
+        f"  expected exit: {expected}\n"
+        f"  observed exit: {result.returncode}\n"
+        f"  stdout:\n{result.stdout or '    <empty>'}\n"
+        f"  stderr:\n{result.stderr or '    <empty>'}"
+    )
 
 
 def write_script(tmp_path: Path, base: str) -> Path:
@@ -46,19 +76,10 @@ def write_script(tmp_path: Path, base: str) -> Path:
     return path
 
 
-def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, "-m", "src.cli", *args],
-        capture_output=True,
-        text=True,
-        timeout=180,
-    )
-
-
 @pytest.fixture
-def discovered(tmp_path: Path, live_app: str) -> object:
-    """One real CLI run with a secret in the goal, cleaned up afterwards."""
-    script = write_script(tmp_path, live_app)
+def discovered(tmp_path: Path, live_app: str) -> tuple[subprocess.CompletedProcess[str], Path]:
+    """One real CLI run, with a secret in the goal, writing into tmp_path."""
+    evidence = tmp_path / "evidence"
     result = run_cli(
         "discover",
         "--goal",
@@ -66,29 +87,43 @@ def discovered(tmp_path: Path, live_app: str) -> object:
         "--target",
         live_app + "/search",
         "--dry-run",
-        str(script),
+        str(write_script(tmp_path, live_app)),
+        "--evidence-dir",
+        str(evidence),
         "--redact",
         SECRET,
         "--max-steps",
         "4",
     )
-    directory = Path(result.stdout.strip().splitlines()[-1]) if result.stdout.strip() else None
-    try:
-        yield result, directory
-    finally:
-        if directory is not None and directory.exists():
-            shutil.rmtree(directory)
+    assert_exit(result, EXIT_CODES["needs_human"], "scripted discovery run should need a human")
+
+    printed = result.stdout.strip().splitlines()
+    assert printed, f"the CLI printed no run directory\n  stderr:\n{result.stderr}"
+    directory = Path(printed[-1])
+    assert directory.is_dir(), (
+        f"the printed path is not a directory: {directory}\n  stderr:\n{result.stderr}"
+    )
+    return result, directory
 
 
-def test_the_run_directory_is_printed_and_exists(discovered: object) -> None:
-    result, directory = discovered  # type: ignore[misc]
-    assert result.returncode == EXIT_CODES["needs_human"], result.stderr
-    assert directory is not None and directory.is_dir()
-    assert directory.name.count("-") == 2, "run id is YYYYMMDD-HHMMSS-xxxx"
+def test_the_run_directory_is_printed_and_named_correctly(
+    discovered: tuple[subprocess.CompletedProcess[str], Path],
+) -> None:
+    _, directory = discovered
+    assert RUN_ID.match(directory.name), f"run id is not YYYYMMDD-HHMMSS-xxxx: {directory.name}"
 
 
-def test_the_expected_files_are_written(discovered: object) -> None:
-    _, directory = discovered  # type: ignore[misc]
+def test_the_run_is_written_where_it_was_told_and_not_into_the_repo(
+    discovered: tuple[subprocess.CompletedProcess[str], Path], tmp_path: Path
+) -> None:
+    _, directory = discovered
+    assert directory.parent == tmp_path / "evidence"
+
+
+def test_the_expected_files_are_written(
+    discovered: tuple[subprocess.CompletedProcess[str], Path],
+) -> None:
+    _, directory = discovered
     assert (directory / "run.jsonl").is_file()
     assert (directory / "transcript.json").is_file()
     assert (directory / "result.json").is_file()
@@ -98,10 +133,9 @@ def test_the_expected_files_are_written(discovered: object) -> None:
 
 
 def test_a_redacted_value_appears_nowhere_under_the_run_directory(
-    discovered: object,
+    discovered: tuple[subprocess.CompletedProcess[str], Path],
 ) -> None:
-    """The named test for item 4."""
-    _, directory = discovered  # type: ignore[misc]
+    _, directory = discovered
     offenders = [
         str(p)
         for p in directory.rglob("*")
@@ -111,31 +145,50 @@ def test_a_redacted_value_appears_nowhere_under_the_run_directory(
 
 
 def test_redaction_replaced_the_value_rather_than_the_value_never_being_written(
-    discovered: object,
+    discovered: tuple[subprocess.CompletedProcess[str], Path],
 ) -> None:
     """Absence proves nothing on its own. The placeholder proves redaction actually ran."""
-    _, directory = discovered  # type: ignore[misc]
+    _, directory = discovered
     transcript = (directory / "transcript.json").read_text()
     assert "<param:redacted_0>" in transcript
     assert "look up member <param:redacted_0>" in transcript
 
 
 def test_a_real_run_directory_holds_no_credential_shaped_strings(
-    discovered: object,
+    discovered: tuple[subprocess.CompletedProcess[str], Path],
 ) -> None:
     """The secret guard, pointed at evidence a run actually produced."""
-    _, directory = discovered  # type: ignore[misc]
+    _, directory = discovered
     assert not scan([directory])
 
 
+def test_running_the_suite_never_writes_into_the_repository_evidence_directory() -> None:
+    """Every test passes --evidence-dir. A run directory here means one of them did not."""
+    strays = [p.name for p in Path("evidence").glob("*") if p.is_dir() and RUN_ID.match(p.name)]
+    assert not strays, f"tests wrote run directories into evidence/: {strays}"
+
+
 # -- argument handling -----------------------------------------------------------
-def test_a_missing_policy_file_fails_without_launching_anything() -> None:
+def test_a_missing_policy_file_fails_without_launching_anything(tmp_path: Path) -> None:
     result = run_cli(
-        "discover", "--goal", "x", "--target", "http://127.0.0.1:1/", "--config", "nope.json"
+        "discover",
+        "--goal",
+        "x",
+        "--target",
+        "http://127.0.0.1:1/",
+        "--config",
+        str(tmp_path / "nope.json"),
+        "--evidence-dir",
+        str(tmp_path / "evidence"),
     )
-    assert result.returncode == EXIT_CODES["failure"]
+    assert_exit(result, EXIT_CODES["failure"], "a missing policy file should exit as a failure")
     assert "cannot read policy file" in result.stderr
 
 
 def test_goal_and_target_are_required() -> None:
-    assert run_cli("discover").returncode != 0
+    result = run_cli("discover")
+    assert result.returncode != 0, (
+        "discover with no arguments should fail\n"
+        f"  observed exit: {result.returncode}\n  stderr:\n{result.stderr}"
+    )
+    assert "--goal" in result.stderr

@@ -4,6 +4,7 @@
 # python
 __pycache__/
 *.pyc
+*.egg-info/
 .venv/
 .pytest_cache/
 
@@ -20,5 +21,4 @@ interventions/*
 
 # os
 .DS_Store
-.mypy_cache/
 .mypy_cache/

@@ -57,6 +57,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Replay a scripted list of model turns instead of calling a model. No network.",
     )
     discover.add_argument(
+        "--evidence-dir",
+        default=str(EVIDENCE_ROOT),
+        metavar="DIR",
+        help="Where run directories are written. Tests pass a temporary path.",
+    )
+    discover.add_argument(
         "--redact",
         action="append",
         default=[],
@@ -92,7 +98,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
         return EXIT_CODES["failure"]
 
     redactor = Redactor({f"redacted_{i}": v for i, v in enumerate(args.redact)})
-    writer = EvidenceWriter(new_run_id(), redactor, root=EVIDENCE_ROOT)
+    writer = EvidenceWriter(new_run_id(), redactor, root=Path(args.evidence_dir))
     surface = WebSurface(policy, PolicyGate(policy), headless=not args.headed)
 
     try:

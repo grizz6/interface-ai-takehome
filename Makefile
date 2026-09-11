@@ -7,9 +7,13 @@
 app:
 	python3 target_app/app.py
 
-# python -m src.cli discover --goal "..." --target http://localhost:8080
+# Override either on the command line:
+#   make discover GOAL="..." TARGET=http://localhost:8080/member/100001
+GOAL ?= look up member 100001 and read the current savings balance
+TARGET ?= http://localhost:8080/search
+
 discover:
-	@echo "not implemented: discovery loop lands in phase 4"
+	python3 -m src.cli discover --goal "$(GOAL)" --target "$(TARGET)"
 
 # python -m src.cli replay --capability capabilities/<id>.json --params '{...}'
 replay:
