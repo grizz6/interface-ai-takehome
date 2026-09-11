@@ -512,3 +512,61 @@ whatever was pointed at can be found again, not that it was the right thing. Wha
 is the checkpoint, which is also model authored, so a run can be confidently and consistently
 wrong end to end. Phase 9 is where that gets tested rather than argued, and it is the reason
 evidence is worth more than any assertion in this file.
+
+## 0012. What the loop tells the model, and what it withholds
+
+Phase 4, step 3.
+
+Two decisions about the model's context window, both of which come down to the same thing:
+what the model is given shapes what it spends its steps on.
+
+### A refusal names the rule and nothing else
+
+When the policy gate refuses an action the model is told that the action was refused, which
+rule refused it, that the refusal is final, and that the direction is closed. It is not told
+which pattern matched, which path was denied, or anything about the shape of the allowlist.
+`PolicyViolation` carries `rule` and `reason` as separate attributes precisely so the loop can
+pass one and drop the other, and there is a test asserting the pattern never appears in a
+tool_result.
+
+The reason is that a model given the boundary will explore the boundary. Told that
+`/dev/faults` matched `^/dev(/.*)?$`, a capable model will quite reasonably try `/dev` without
+a slash, or a redirect, or a path that reaches the same page by another route. None of that is
+malice, it is the model doing what it was asked to do with the information it has, and every
+one of those attempts is a wasted step and another blocked action. Naming the rule is enough
+to make the refusal legible without making it negotiable.
+
+Rejected: say nothing at all beyond "refused". It leaks less. It was rejected because a bare
+refusal is indistinguishable from a transient error, and the model's correct response to a
+transient error is to retry, which is exactly the behaviour the three consecutive block limit
+exists to catch. Telling it the refusal is final is what converts a wasted run into a
+redirected one.
+
+Known weakness: the rule id is itself a small leak. `denied_path_patterns` tells a model that
+paths are what got refused, which narrows the search if it chooses to search. The alternative
+was an opaque code, which would have made every operator debugging a run go and look the code
+up. That trade favours the operator, who reads these far more often than a model probes them.
+
+### Only the two most recent snapshots are carried in full
+
+Every action stays in history for the whole run. Observations do not: the two most recent are
+carried in full and everything older collapses to a line naming the page and its URL.
+
+An aria snapshot of this application is around five thousand characters. Twenty of them would
+be a hundred thousand characters of mostly dead screens, and the things that actually carry
+the reasoning, which are what the model did and what came back, would be a rounding error
+inside them. Two is the smallest number that still lets the model compare the screen before an
+action with the screen after it, which is the comparison that tells it whether the action
+worked.
+
+Rejected: summarize old observations with the model itself, or keep a rolling digest of what
+has been seen. Both are more informative than a URL. Both were rejected as a second place for
+the run to go wrong: a summarizer is another model call that can be wrong, can fail, and costs
+a request against a rate limit that a twenty step run is already brushing.
+
+Known weakness: a flow long enough that the relevant screen fell out of the window is a flow
+this loop will handle badly. If the model needs to remember what was on a form eight steps ago
+it cannot, and its only recourse is to navigate back and look, which costs two steps and may
+not be possible after an irreversible action. Nothing here detects that situation; it would
+show up as a run that gives up for no visible reason. The fix, if it happens, is to let
+finish-relevant details be written down as they are seen rather than to widen the window.
