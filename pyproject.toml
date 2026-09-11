@@ -3,7 +3,7 @@ name = "computer-use-automation"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
-    "playwright",
+    "playwright>=1.60",  # mode="ai" and boxes are not available before this
     "pydantic>=2",
     "anthropic",
     "flask",
