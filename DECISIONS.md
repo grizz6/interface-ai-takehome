@@ -182,3 +182,54 @@ Third, there is a coverage gap in this pass that is worth naming rather than qui
 carrying: `ParamSpec.pattern` is also a user supplied regex and is not yet compiled at record
 time, because only `Signal.pattern`, `Signal.url_pattern` and `ExtractionSpec.strip_pattern`
 were in scope. The same principle applies to it and it should get the same treatment.
+
+## 0005. A structural signal, added before anything needs it
+
+Phase 2 revision.
+
+`SignalKind.aria_matches` and `Signal.aria_template` let a signal assert the shape of a screen
+rather than the presence of a string, and `SurfaceFingerprint.aria_template` records that
+shape at recording time. A text assertion answers "does this string appear somewhere". A
+structural assertion answers "is this the screen I recorded". Those are different questions,
+and for a checkpoint the second is the one actually being asked: the words "Sub-Account
+Opened" sitting in a hidden template, or in a breadcrumb, satisfy `text_present` while the
+flow is in fact nowhere near the confirmation screen. A heading with that name, in a tree
+with that shape, does not have the same failure mode. The fingerprint gets one for the same
+reason on a longer timescale: a tenant renaming a button is a text difference, but a tenant
+inserting an extra confirmation step is a shape difference, and only the second is detectable
+without diffing every string on the page.
+
+The timing is the part that needs defending, because nothing consumes this field yet. The
+answer is that the cost of adding it is a step function and we are on the cheap side of it for
+exactly one more phase. `Capability` is pinned at `schema_version` 1.0, `capabilities/` is
+empty, and no discovery run has ever written an artifact, so today this is a field appearing
+in a schema nobody has serialized against. The moment the recorder writes the first capability
+the same edit needs a version bump, a migration, and a compatibility story for artifacts that
+have already been reviewed and approved. Doing it now costs one commit. Doing it in three
+phases costs all of that plus the temptation to skip it.
+
+Rejected: wait until the recorder actually needs it, then bump to 1.1. This is ordinary YAGNI
+and it is usually the right call, with a real argument behind it: a field designed before its
+consumer exists is a field designed from imagination, and it will probably be the wrong shape.
+It was rejected because the penalty is asymmetric. A wrongly shaped field on a schema nothing
+has serialized is a free edit, while a correctly shaped field added after approved artifacts
+exist is a migration. When one branch is cheap to undo and the other is not, guessing early is
+the better bet.
+
+Known weakness, two.
+
+The first is the one that decides where this may be used. An aria template is far more brittle
+to benign markup change than a text assertion is. Wrapping a heading in a div, or a framework
+upgrade that adds a generic container, leaves `text_present` completely unmoved and can change
+the snapshot's shape. So `aria_matches` belongs on capability checkpoints and on surface
+fingerprints, where "is this the screen I recorded" is genuinely the question, and not on
+ordinary step postconditions, where it would convert every cosmetic change into a replay
+failure. Nothing in the schema enforces that placement. It is a convention, and validation
+will cheerfully accept an `aria_matches` postcondition on all six steps of a flow.
+
+The second is an honest contradiction with 0004. `aria_template` is typed as a plain string,
+so a malformed template is accepted at record time and only discovered when replay tries to
+match it. That is precisely the failure mode 0004 exists to prevent, and the reason it stands
+is that Playwright exposes no public parser for the aria template dialect, so there is nothing
+to validate against short of writing one. The gap is real and is recorded here rather than
+quietly carried.
