@@ -389,7 +389,7 @@ class WebSurface:
     ) -> ActionOutcome:
         decision = self._gate.check(action, risk)
         if isinstance(decision, Blocked):
-            raise PolicyViolation(f"{decision.rule}: {decision.reason}")
+            raise PolicyViolation(decision.rule, decision.reason)
 
         started = time.monotonic()
         strategy: str | None = None
@@ -443,7 +443,7 @@ class WebSurface:
 
         decision = self._gate.check_url(self._page.url)
         if isinstance(decision, Blocked):
-            raise PolicyViolation(f"{decision.rule}: {decision.reason}")
+            raise PolicyViolation(decision.rule, decision.reason)
 
     def _apply_wait(self, wait: WaitSpec) -> None:
         if wait.condition == "load":

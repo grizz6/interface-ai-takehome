@@ -11,6 +11,7 @@ this repo that references its value.
 """
 from __future__ import annotations
 
+import base64
 import random
 import time
 from enum import StrEnum
@@ -61,9 +62,16 @@ class ToolSpec(BaseModel):
 
 
 class UserMessage(BaseModel):
+    """Text, and optionally one screenshot.
+
+    The image is carried as raw bytes and base64 encoded only at the provider boundary, so
+    nothing upstream has to know how a given API wants pictures delivered.
+    """
+
     model_config = STRICT
     role: Literal["user"] = "user"
     text: str
+    image_png: bytes | None = Field(default=None, repr=False)
 
 
 class ModelMessage(BaseModel):
@@ -158,6 +166,14 @@ def to_input_payload(messages: list[Message]) -> list[dict[str, Any]]:
     for message in messages:
         if message.role == "user":
             payload.append({"type": "text", "text": message.text})
+            if message.image_png is not None:
+                payload.append(
+                    {
+                        "type": "image",
+                        "mime_type": "image/png",
+                        "data": base64.b64encode(message.image_png).decode(),
+                    }
+                )
         elif message.role == "model":
             if message.text:
                 payload.append({"type": "text", "text": message.text})

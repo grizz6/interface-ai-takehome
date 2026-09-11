@@ -43,7 +43,18 @@ class ActionTimeout(SurfaceError):
 
 
 class PolicyViolation(SurfaceError):
-    """The policy gate refused the action. A refusal, not a malfunction."""
+    """The policy gate refused the action. A refusal, not a malfunction.
+
+    `rule` and `reason` are kept apart on purpose. The rule id is safe to hand back to the
+    model so it knows the direction is closed. The reason names the pattern that matched,
+    which is a description of the allowlist, and a model told where the boundaries are will
+    reason about the boundaries.
+    """
+
+    def __init__(self, rule: str, reason: str) -> None:
+        super().__init__(f"{rule}: {reason}")
+        self.rule = rule
+        self.reason = reason
 
 
 @dataclass(frozen=True)
