@@ -1,4 +1,4 @@
-.PHONY: app discover replay operator test
+.PHONY: app discover replay operator test schemas
 
 # Phase 0 stubs. Each target echoes and exits until its phase lands.
 # The command each one will run is recorded above it.
@@ -21,4 +21,8 @@ operator:
 
 # pytest
 test:
-	@echo "not implemented: tests land alongside the models in phase 2"
+	pytest
+
+# export JSON Schema for Capability and RunResult into schemas/
+schemas:
+	python3 -m src.models.export_schemas

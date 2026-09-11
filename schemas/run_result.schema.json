@@ -1,0 +1,375 @@
+{
+  "$defs": {
+    "ActionType": {
+      "enum": [
+        "navigate",
+        "click",
+        "type",
+        "select",
+        "press",
+        "wait_for"
+      ],
+      "title": "ActionType",
+      "type": "string"
+    },
+    "BusinessOutcomeResult": {
+      "additionalProperties": false,
+      "description": "A declared, legitimate answer. Not a failure, and never raised.",
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "detected_at_step": {
+          "title": "Detected At Step",
+          "type": "integer"
+        },
+        "evidence": {
+          "$ref": "#/$defs/EvidenceRef"
+        },
+        "kind": {
+          "const": "business_outcome",
+          "default": "business_outcome",
+          "title": "Kind",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "partial_outputs": {
+          "additionalProperties": true,
+          "title": "Partial Outputs",
+          "type": "object"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/StepTrace"
+          },
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "detected_at_step",
+        "evidence"
+      ],
+      "title": "BusinessOutcomeResult",
+      "type": "object"
+    },
+    "EvidenceRef": {
+      "additionalProperties": false,
+      "description": "Where the evidence for this run landed. Paths only, never content.",
+      "properties": {
+        "directory": {
+          "title": "Directory",
+          "type": "string"
+        },
+        "log_path": {
+          "title": "Log Path",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "screenshot_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Screenshot Paths",
+          "type": "array"
+        }
+      },
+      "required": [
+        "run_id",
+        "directory",
+        "log_path"
+      ],
+      "title": "EvidenceRef",
+      "type": "object"
+    },
+    "FailureClass": {
+      "enum": [
+        "locator_unresolved",
+        "checkpoint_failed",
+        "timeout",
+        "app_error",
+        "extraction_failed",
+        "surface_unavailable",
+        "internal"
+      ],
+      "title": "FailureClass",
+      "type": "string"
+    },
+    "FailureResult": {
+      "additionalProperties": false,
+      "description": "Something broke. Carries enough to debug it without rerunning.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ActionType"
+        },
+        "error_class": {
+          "$ref": "#/$defs/FailureClass"
+        },
+        "evidence": {
+          "$ref": "#/$defs/EvidenceRef"
+        },
+        "expected": {
+          "title": "Expected",
+          "type": "string"
+        },
+        "kind": {
+          "const": "failure",
+          "default": "failure",
+          "title": "Kind",
+          "type": "string"
+        },
+        "observed": {
+          "title": "Observed",
+          "type": "string"
+        },
+        "step_index": {
+          "title": "Step Index",
+          "type": "integer"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/StepTrace"
+          },
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "error_class",
+        "step_index",
+        "action",
+        "expected",
+        "observed",
+        "evidence"
+      ],
+      "title": "FailureResult",
+      "type": "object"
+    },
+    "NeedsHumanResult": {
+      "additionalProperties": false,
+      "description": "The run stopped and asked for a person, rather than guessing.",
+      "properties": {
+        "evidence": {
+          "$ref": "#/$defs/EvidenceRef"
+        },
+        "intervention_id": {
+          "title": "Intervention Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "needs_human",
+          "default": "needs_human",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/StuckReason"
+        },
+        "step_index": {
+          "title": "Step Index",
+          "type": "integer"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/StepTrace"
+          },
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "intervention_id",
+        "reason",
+        "step_index",
+        "evidence"
+      ],
+      "title": "NeedsHumanResult",
+      "type": "object"
+    },
+    "PolicyBlockedResult": {
+      "additionalProperties": false,
+      "description": "The policy gate refused an action. A refusal is not a malfunction.",
+      "properties": {
+        "attempted_action": {
+          "$ref": "#/$defs/ActionType"
+        },
+        "evidence": {
+          "$ref": "#/$defs/EvidenceRef"
+        },
+        "kind": {
+          "const": "policy_blocked",
+          "default": "policy_blocked",
+          "title": "Kind",
+          "type": "string"
+        },
+        "rule": {
+          "title": "Rule",
+          "type": "string"
+        },
+        "step_index": {
+          "title": "Step Index",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rule",
+        "attempted_action",
+        "step_index",
+        "evidence"
+      ],
+      "title": "PolicyBlockedResult",
+      "type": "object"
+    },
+    "StepTrace": {
+      "additionalProperties": false,
+      "description": "What actually happened on one step, including which locator tier resolved it.\n\n`locator_strategy_used` is telemetry, not decoration. A flow quietly degrading from\nrole_name to css_fallback over successive runs is the early warning that a surface has\ndrifted, and it is invisible unless it is recorded per step.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ActionType"
+        },
+        "attempt_count": {
+          "default": 1,
+          "title": "Attempt Count",
+          "type": "integer"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "duration_ms": {
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "index": {
+          "title": "Index",
+          "type": "integer"
+        },
+        "locator_strategy_used": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Locator Strategy Used"
+        },
+        "recovered_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recovered By"
+        }
+      },
+      "required": [
+        "index",
+        "action",
+        "description",
+        "duration_ms"
+      ],
+      "title": "StepTrace",
+      "type": "object"
+    },
+    "StuckReason": {
+      "enum": [
+        "locator_ambiguous",
+        "locator_unresolved",
+        "unknown_state",
+        "risky_action_requires_approval",
+        "recovery_exhausted",
+        "step_timeout",
+        "max_steps_exceeded"
+      ],
+      "title": "StuckReason",
+      "type": "string"
+    },
+    "SuccessResult": {
+      "additionalProperties": false,
+      "description": "The goal was reached and the checkpoint held.",
+      "properties": {
+        "duration_ms": {
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "evidence": {
+          "$ref": "#/$defs/EvidenceRef"
+        },
+        "kind": {
+          "const": "success",
+          "default": "success",
+          "title": "Kind",
+          "type": "string"
+        },
+        "outputs": {
+          "additionalProperties": true,
+          "title": "Outputs",
+          "type": "object"
+        },
+        "recoveries_applied": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Recoveries Applied",
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/StepTrace"
+          },
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence",
+        "duration_ms"
+      ],
+      "title": "SuccessResult",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "business_outcome": "#/$defs/BusinessOutcomeResult",
+      "failure": "#/$defs/FailureResult",
+      "needs_human": "#/$defs/NeedsHumanResult",
+      "policy_blocked": "#/$defs/PolicyBlockedResult",
+      "success": "#/$defs/SuccessResult"
+    },
+    "propertyName": "kind"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/SuccessResult"
+    },
+    {
+      "$ref": "#/$defs/BusinessOutcomeResult"
+    },
+    {
+      "$ref": "#/$defs/NeedsHumanResult"
+    },
+    {
+      "$ref": "#/$defs/PolicyBlockedResult"
+    },
+    {
+      "$ref": "#/$defs/FailureResult"
+    }
+  ]
+}

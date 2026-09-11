@@ -1,0 +1,1360 @@
+{
+  "$defs": {
+    "ActionType": {
+      "enum": [
+        "navigate",
+        "click",
+        "type",
+        "select",
+        "press",
+        "wait_for"
+      ],
+      "title": "ActionType",
+      "type": "string"
+    },
+    "ApprovalStatus": {
+      "enum": [
+        "draft",
+        "approved"
+      ],
+      "title": "ApprovalStatus",
+      "type": "string"
+    },
+    "Assertion": {
+      "additionalProperties": false,
+      "description": "A signal plus why it is being asserted, phrased for whoever reads the failure.",
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "signal": {
+          "$ref": "#/$defs/Signal"
+        },
+        "timeout_ms": {
+          "default": 5000,
+          "title": "Timeout Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "signal",
+        "description"
+      ],
+      "title": "Assertion",
+      "type": "object"
+    },
+    "BusinessOutcomeSpec": {
+      "additionalProperties": false,
+      "description": "A legitimate answer the caller needs, declared up front so replay can return it.\n\nPer design rule 5 these are results, never exceptions. \"No such member\" is an\nanswer, not a crash, and conflating the two is the mistake the brief names by name.",
+      "properties": {
+        "check_after_step": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "None means check after every step",
+          "title": "Check After Step"
+        },
+        "code": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Code",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "detect": {
+          "$ref": "#/$defs/Signal"
+        },
+        "partial_outputs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Partial Outputs",
+          "type": "array"
+        },
+        "terminal": {
+          "default": true,
+          "title": "Terminal",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "description",
+        "detect"
+      ],
+      "title": "BusinessOutcomeSpec",
+      "type": "object"
+    },
+    "ContainerOrdinalLocator": {
+      "additionalProperties": false,
+      "description": "Tier 3. For controls whose accessible names collide across regions.",
+      "properties": {
+        "container": {
+          "$ref": "#/$defs/ContainerRef"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "ordinal": {
+          "title": "Ordinal",
+          "type": "integer"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "strategy": {
+          "const": "container_ordinal",
+          "default": "container_ordinal",
+          "title": "Strategy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "container",
+        "role",
+        "ordinal"
+      ],
+      "title": "ContainerOrdinalLocator",
+      "type": "object"
+    },
+    "ContainerRef": {
+      "additionalProperties": false,
+      "description": "An enclosing region, named the way a person reading the screen would name it.\n\nDeliberately carries no CSS. `dom_id_hint` is recorded so a human debugging a failed\nrun can find the element quickly, and is never consulted when resolving.",
+      "properties": {
+        "dom_id_hint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dom Id Hint"
+        },
+        "heading_text": {
+          "title": "Heading Text",
+          "type": "string"
+        },
+        "role": {
+          "default": "table",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "heading_text"
+      ],
+      "title": "ContainerRef",
+      "type": "object"
+    },
+    "CssFallbackLocator": {
+      "additionalProperties": false,
+      "description": "Tier 4. Brittle by construction, which is why `note` is required.",
+      "properties": {
+        "brittle": {
+          "const": true,
+          "default": true,
+          "title": "Brittle",
+          "type": "boolean"
+        },
+        "css": {
+          "title": "Css",
+          "type": "string"
+        },
+        "note": {
+          "description": "Why no better strategy was available.",
+          "title": "Note",
+          "type": "string"
+        },
+        "strategy": {
+          "const": "css_fallback",
+          "default": "css_fallback",
+          "title": "Strategy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "css",
+        "note"
+      ],
+      "title": "CssFallbackLocator",
+      "type": "object"
+    },
+    "ExtractionSpec": {
+      "additionalProperties": false,
+      "description": "How to read one value off the surface.\n\nDeclared, not executed as a step. See DECISIONS.md 0003 for why reading is separated\nfrom acting.",
+      "properties": {
+        "attribute": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attribute"
+        },
+        "locator": {
+          "$ref": "#/$defs/LocatorBundle"
+        },
+        "parse": {
+          "enum": [
+            "raw",
+            "currency",
+            "integer",
+            "decimal",
+            "date"
+          ],
+          "title": "Parse",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "source": {
+          "enum": [
+            "text",
+            "value",
+            "attribute"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "strip_pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Strip Pattern"
+        }
+      },
+      "required": [
+        "locator",
+        "source",
+        "parse"
+      ],
+      "title": "ExtractionSpec",
+      "type": "object"
+    },
+    "InsertedStep": {
+      "additionalProperties": false,
+      "description": "A step one variant needs and the base flow does not, such as an extra confirmation.",
+      "properties": {
+        "after_index": {
+          "title": "After Index",
+          "type": "integer"
+        },
+        "step": {
+          "$ref": "#/$defs/Step"
+        }
+      },
+      "required": [
+        "after_index",
+        "step"
+      ],
+      "title": "InsertedStep",
+      "type": "object"
+    },
+    "LabelRelationLocator": {
+      "additionalProperties": false,
+      "description": "Tier 2. For controls that have no accessible name of their own.",
+      "properties": {
+        "label_text": {
+          "title": "Label Text",
+          "type": "string"
+        },
+        "relation": {
+          "enum": [
+            "cell_to_left",
+            "preceding_sibling",
+            "enclosing_row"
+          ],
+          "title": "Relation",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "strategy": {
+          "const": "label_relation",
+          "default": "label_relation",
+          "title": "Strategy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label_text",
+        "relation",
+        "role"
+      ],
+      "title": "LabelRelationLocator",
+      "type": "object"
+    },
+    "LiteralBinding": {
+      "additionalProperties": false,
+      "description": "A value baked into the artifact. Never used for anything sensitive.",
+      "properties": {
+        "source": {
+          "const": "literal",
+          "default": "literal",
+          "title": "Source",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "LiteralBinding",
+      "type": "object"
+    },
+    "LocatorBundle": {
+      "additionalProperties": false,
+      "description": "An ordered set of ways to find one control, plus the frame it lives in.",
+      "properties": {
+        "fallbacks": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "container_ordinal": "#/$defs/ContainerOrdinalLocator",
+                "css_fallback": "#/$defs/CssFallbackLocator",
+                "label_relation": "#/$defs/LabelRelationLocator",
+                "role_name": "#/$defs/RoleNameLocator"
+              },
+              "propertyName": "strategy"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/RoleNameLocator"
+              },
+              {
+                "$ref": "#/$defs/LabelRelationLocator"
+              },
+              {
+                "$ref": "#/$defs/ContainerOrdinalLocator"
+              },
+              {
+                "$ref": "#/$defs/CssFallbackLocator"
+              }
+            ]
+          },
+          "title": "Fallbacks",
+          "type": "array"
+        },
+        "frame_path": {
+          "description": "iframe names to descend, outermost first",
+          "items": {
+            "type": "string"
+          },
+          "title": "Frame Path",
+          "type": "array"
+        },
+        "geometry_hint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rect"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "primary": {
+          "discriminator": {
+            "mapping": {
+              "container_ordinal": "#/$defs/ContainerOrdinalLocator",
+              "css_fallback": "#/$defs/CssFallbackLocator",
+              "label_relation": "#/$defs/LabelRelationLocator",
+              "role_name": "#/$defs/RoleNameLocator"
+            },
+            "propertyName": "strategy"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RoleNameLocator"
+            },
+            {
+              "$ref": "#/$defs/LabelRelationLocator"
+            },
+            {
+              "$ref": "#/$defs/ContainerOrdinalLocator"
+            },
+            {
+              "$ref": "#/$defs/CssFallbackLocator"
+            }
+          ],
+          "title": "Primary"
+        },
+        "recorded_accessible_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recorded Accessible Name"
+        }
+      },
+      "required": [
+        "primary"
+      ],
+      "title": "LocatorBundle",
+      "type": "object"
+    },
+    "OutputSpec": {
+      "additionalProperties": false,
+      "description": "One typed value the calling agent gets back.",
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "extraction": {
+          "$ref": "#/$defs/ExtractionSpec"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "sensitivity": {
+          "$ref": "#/$defs/Sensitivity",
+          "default": "none"
+        },
+        "type": {
+          "$ref": "#/$defs/ValueType"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "description",
+        "extraction"
+      ],
+      "title": "OutputSpec",
+      "type": "object"
+    },
+    "ParamBinding": {
+      "additionalProperties": false,
+      "description": "Take the value from a caller supplied parameter at invocation time.",
+      "properties": {
+        "param": {
+          "title": "Param",
+          "type": "string"
+        },
+        "source": {
+          "const": "param",
+          "default": "param",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "param"
+      ],
+      "title": "ParamBinding",
+      "type": "object"
+    },
+    "ParamSpec": {
+      "additionalProperties": false,
+      "description": "One typed input the calling agent supplies per invocation.",
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "example": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Example"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "sensitivity": {
+          "$ref": "#/$defs/Sensitivity",
+          "default": "none"
+        },
+        "type": {
+          "$ref": "#/$defs/ValueType"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "description"
+      ],
+      "title": "ParamSpec",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "description": "Where this artifact came from, kept apart from what it does.\n\nThe raw model transcript is deliberately not here. The artifact is decoupled from it,\nand `raw_step_count` is the only trace of how much the recorder compressed.",
+      "properties": {
+        "discovered_by_model": {
+          "title": "Discovered By Model",
+          "type": "string"
+        },
+        "discovery_run_id": {
+          "title": "Discovery Run Id",
+          "type": "string"
+        },
+        "goal_text": {
+          "title": "Goal Text",
+          "type": "string"
+        },
+        "human_edited": {
+          "default": false,
+          "title": "Human Edited",
+          "type": "boolean"
+        },
+        "raw_step_count": {
+          "title": "Raw Step Count",
+          "type": "integer"
+        },
+        "recorded_at": {
+          "format": "date-time",
+          "title": "Recorded At",
+          "type": "string"
+        },
+        "redaction_policy_version": {
+          "title": "Redaction Policy Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "discovered_by_model",
+        "discovery_run_id",
+        "recorded_at",
+        "goal_text",
+        "raw_step_count",
+        "redaction_policy_version"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "RecoveryAction": {
+      "enum": [
+        "dismiss",
+        "wait_retry",
+        "reload",
+        "reauthenticate"
+      ],
+      "title": "RecoveryAction",
+      "type": "string"
+    },
+    "RecoveryRule": {
+      "additionalProperties": false,
+      "description": "A recoverable condition and what to do about it.\n\nRecoveries never become a result kind. They are recorded as `recoveries_applied` on a\nSuccess, so a run that needed three retries is visibly different from one that did not.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/RecoveryAction"
+        },
+        "action_target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LocatorBundle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "applies_to_steps": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applies To Steps"
+        },
+        "detect": {
+          "$ref": "#/$defs/Signal"
+        },
+        "max_attempts": {
+          "default": 2,
+          "title": "Max Attempts",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "detect",
+        "action"
+      ],
+      "title": "RecoveryRule",
+      "type": "object"
+    },
+    "Rect": {
+      "additionalProperties": false,
+      "description": "A recorded bounding box. A hint for a human looking at evidence, never a locator.",
+      "properties": {
+        "height": {
+          "title": "Height",
+          "type": "integer"
+        },
+        "width": {
+          "title": "Width",
+          "type": "integer"
+        },
+        "x": {
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "title": "Y",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "Rect",
+      "type": "object"
+    },
+    "RiskClass": {
+      "enum": [
+        "safe_reversible",
+        "risky_irreversible"
+      ],
+      "title": "RiskClass",
+      "type": "string"
+    },
+    "RoleNameLocator": {
+      "additionalProperties": false,
+      "description": "Tier 1. Role plus accessible name.",
+      "properties": {
+        "exact": {
+          "default": true,
+          "title": "Exact",
+          "type": "boolean"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "strategy": {
+          "const": "role_name",
+          "default": "role_name",
+          "title": "Strategy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "name"
+      ],
+      "title": "RoleNameLocator",
+      "type": "object"
+    },
+    "Sensitivity": {
+      "enum": [
+        "none",
+        "pii",
+        "secret"
+      ],
+      "title": "Sensitivity",
+      "type": "string"
+    },
+    "Signal": {
+      "additionalProperties": false,
+      "description": "An observable condition on a surface.\n\nOne signal type serves checkpoints, business outcome detection, recovery triggers and\nwaits, so that \"how do we know we are there\" is expressed one way everywhere.",
+      "properties": {
+        "case_sensitive": {
+          "default": false,
+          "title": "Case Sensitive",
+          "type": "boolean"
+        },
+        "frame_path": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Frame Path",
+          "type": "array"
+        },
+        "kind": {
+          "$ref": "#/$defs/SignalKind"
+        },
+        "locator": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LocatorBundle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "url_pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url Pattern"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "Signal",
+      "type": "object"
+    },
+    "SignalKind": {
+      "enum": [
+        "text_present",
+        "text_absent",
+        "url_matches",
+        "element_present",
+        "element_absent"
+      ],
+      "title": "SignalKind",
+      "type": "string"
+    },
+    "Step": {
+      "additionalProperties": false,
+      "description": "One recorded action, with everything replay needs to perform and verify it.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ActionType"
+        },
+        "description": {
+          "description": "Written for a human reviewer, not for a parser.",
+          "title": "Description",
+          "type": "string"
+        },
+        "index": {
+          "title": "Index",
+          "type": "integer"
+        },
+        "postcondition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Assertion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "risk": {
+          "$ref": "#/$defs/RiskClass"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LocatorBundle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "navigate only; may contain {param} templates",
+          "title": "Url"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "literal": "#/$defs/LiteralBinding",
+                  "param": "#/$defs/ParamBinding"
+                },
+                "propertyName": "source"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ParamBinding"
+                },
+                {
+                  "$ref": "#/$defs/LiteralBinding"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        },
+        "wait": {
+          "$ref": "#/$defs/WaitSpec"
+        }
+      },
+      "required": [
+        "index",
+        "description",
+        "action",
+        "risk",
+        "wait"
+      ],
+      "title": "Step",
+      "type": "object"
+    },
+    "StepPatch": {
+      "additionalProperties": false,
+      "description": "A partial Step, applied over a base step for one tenant variant.\n\nEvery field is optional. A patch that sets nothing is legal and means no change.",
+      "properties": {
+        "action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ActionType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Index"
+        },
+        "postcondition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Assertion"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "risk": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RiskClass"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LocatorBundle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "literal": "#/$defs/LiteralBinding",
+                  "param": "#/$defs/ParamBinding"
+                },
+                "propertyName": "source"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/ParamBinding"
+                },
+                {
+                  "$ref": "#/$defs/LiteralBinding"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        },
+        "wait": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WaitSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "StepPatch",
+      "type": "object"
+    },
+    "SurfaceDescriptor": {
+      "additionalProperties": false,
+      "description": "Which application, which tenant variant, and where the flow starts.",
+      "properties": {
+        "app_id": {
+          "title": "App Id",
+          "type": "string"
+        },
+        "base_url": {
+          "title": "Base Url",
+          "type": "string"
+        },
+        "entry_path": {
+          "title": "Entry Path",
+          "type": "string"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/SurfaceFingerprint"
+        },
+        "kind": {
+          "$ref": "#/$defs/SurfaceKind"
+        },
+        "variant_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Variant Id"
+        }
+      },
+      "required": [
+        "kind",
+        "app_id",
+        "base_url",
+        "entry_path",
+        "fingerprint"
+      ],
+      "title": "SurfaceDescriptor",
+      "type": "object"
+    },
+    "SurfaceFingerprint": {
+      "additionalProperties": false,
+      "description": "What the surface looked like when the flow was recorded.\n\nThe drift detector for multi-tenant reuse: if the fingerprint no longer matches, the\nartifact may still be correct for a different tenant but should not be trusted silently.",
+      "properties": {
+        "brand_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Brand Text"
+        },
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "landmark_signals": {
+          "items": {
+            "$ref": "#/$defs/Signal"
+          },
+          "title": "Landmark Signals",
+          "type": "array"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "captured_at"
+      ],
+      "title": "SurfaceFingerprint",
+      "type": "object"
+    },
+    "SurfaceKind": {
+      "enum": [
+        "web",
+        "legacy_web",
+        "desktop"
+      ],
+      "title": "SurfaceKind",
+      "type": "string"
+    },
+    "ValueType": {
+      "enum": [
+        "string",
+        "integer",
+        "decimal",
+        "currency",
+        "boolean",
+        "date"
+      ],
+      "title": "ValueType",
+      "type": "string"
+    },
+    "VariantOverride": {
+      "additionalProperties": false,
+      "description": "How one tenant differs from the base recording, expressed as a diff.\n\nThe point is that a second tenant running the same vendor product is a patch, not a\nsecond recording.",
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "inserted_steps": {
+          "items": {
+            "$ref": "#/$defs/InsertedStep"
+          },
+          "title": "Inserted Steps",
+          "type": "array"
+        },
+        "outcome_overrides": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Signal"
+          },
+          "title": "Outcome Overrides",
+          "type": "object"
+        },
+        "output_overrides": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ExtractionSpec"
+          },
+          "title": "Output Overrides",
+          "type": "object"
+        },
+        "step_overrides": {
+          "additionalProperties": {
+            "$ref": "#/$defs/StepPatch"
+          },
+          "title": "Step Overrides",
+          "type": "object"
+        },
+        "variant_id": {
+          "title": "Variant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "variant_id",
+        "description"
+      ],
+      "title": "VariantOverride",
+      "type": "object"
+    },
+    "WaitSpec": {
+      "additionalProperties": false,
+      "description": "What the executor waits for before considering a step done.",
+      "properties": {
+        "condition": {
+          "enum": [
+            "load",
+            "network_idle",
+            "signal",
+            "fixed"
+          ],
+          "title": "Condition",
+          "type": "string"
+        },
+        "poll_ms": {
+          "default": 250,
+          "title": "Poll Ms",
+          "type": "integer"
+        },
+        "retry_on_timeout": {
+          "default": 0,
+          "title": "Retry On Timeout",
+          "type": "integer"
+        },
+        "signal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Signal"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "timeout_ms": {
+          "default": 10000,
+          "title": "Timeout Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "condition"
+      ],
+      "title": "WaitSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A reusable, reviewable, parameterized flow that an agent can invoke by name.\n\nFrozen. A recorded fact does not change after the fact; a new version is a new artifact.",
+  "properties": {
+    "capability_id": {
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "title": "Capability Id",
+      "type": "string"
+    },
+    "checkpoint": {
+      "$ref": "#/$defs/Assertion"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "inputs": {
+      "items": {
+        "$ref": "#/$defs/ParamSpec"
+      },
+      "title": "Inputs",
+      "type": "array"
+    },
+    "known_outcomes": {
+      "items": {
+        "$ref": "#/$defs/BusinessOutcomeSpec"
+      },
+      "title": "Known Outcomes",
+      "type": "array"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "outputs": {
+      "items": {
+        "$ref": "#/$defs/OutputSpec"
+      },
+      "title": "Outputs",
+      "type": "array"
+    },
+    "overrides": {
+      "additionalProperties": {
+        "$ref": "#/$defs/VariantOverride"
+      },
+      "title": "Overrides",
+      "type": "object"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "recoveries": {
+      "items": {
+        "$ref": "#/$defs/RecoveryRule"
+      },
+      "title": "Recoveries",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/ApprovalStatus",
+      "default": "draft"
+    },
+    "steps": {
+      "items": {
+        "$ref": "#/$defs/Step"
+      },
+      "title": "Steps",
+      "type": "array"
+    },
+    "surface": {
+      "$ref": "#/$defs/SurfaceDescriptor"
+    },
+    "version": {
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$",
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "capability_id",
+    "version",
+    "name",
+    "description",
+    "surface",
+    "steps",
+    "checkpoint",
+    "provenance"
+  ],
+  "title": "Capability",
+  "type": "object"
+}
