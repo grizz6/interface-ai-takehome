@@ -570,3 +570,154 @@ it cannot, and its only recourse is to navigate back and look, which costs two s
 not be possible after an irreversible action. Nothing here detects that situation; it would
 show up as a run that gives up for no visible reason. The fix, if it happens, is to let
 finish-relevant details be written down as they are seen rather than to widen the window.
+
+## 0013. finish is verified, never trusted
+
+Phase 4, step 4.
+
+When the model calls finish it is making two claims, and neither is accepted on its word. The
+checkpoint is parsed into a Signal, which compiles any regex, and then evaluated against the
+live page. Every declared output has its ref converted to a durable locator and its extraction
+actually executed. Only if all of that succeeds does a SuccessResult exist.
+
+The checkpoint case is the obvious one. A checkpoint is asserted on every future replay of the
+capability, unattended, as the sole test of whether the run worked. A checkpoint that has never
+once held is not a weak assertion, it is a guess, and it will be wrong in exactly the same way
+every time it runs. Checking it costs one evaluation against the page already on screen.
+
+Verifying the extractions is the part worth arguing for, because it is easy to leave out. An
+output is a promise about what the caller receives. A declared output that cannot be read from
+the very page it was declared on is broken before replay has run once, and the failure will
+surface later, in production, as a capability that reports success and returns nothing. Running
+the extraction here converts that into a sentence the model is told immediately, while it is
+still looking at the screen and can point somewhere better.
+
+Rejected: trust finish and let phase 6 discover the problem on the first replay. It is less
+code here and replay has to handle extraction failure anyway. It was rejected because the two
+failures are not the same size. At discovery the cost is one retry. At replay the capability
+has been reviewed, approved and invoked by an agent against a live banking system, and the
+bad news arrives with the run half done.
+
+Known weakness: verification proves the checkpoint holds NOW, not that it discriminates. A
+model that picks a string present on every page in the application, such as the footer, gets a
+checkpoint that passes here and passes on every future replay regardless of where the flow
+ended up. Nothing detects that. The honest fix is to evaluate a candidate checkpoint against an
+earlier observation as well and reject it if it held there too, which is a phase 9 job.
+
+## 0014. The model declares, the schema polices
+
+Phase 4, step 4.
+
+Inputs and outputs are declared by the model at finish, not inferred from the run. The model
+is the only participant that knows which of the values it typed came from the goal and which
+it read off the screen, so inference would be guesswork. What keeps that honest is that every
+declaration passes through the same Pydantic validators the artifact schema uses: names must be
+snake_case, a parameter marked pii cannot carry an example, a required input nothing references
+is rejected, and an output must actually extract.
+
+The division is deliberate. The model supplies intent, which it alone has. The schema supplies
+constraint, which it enforces identically every time and cannot be talked out of. Neither is
+asked to do the other's job.
+
+Rejected: infer parameters by diffing typed values against the goal text. It needs no
+cooperation from the model and cannot be lied to. It was rejected because the mapping is
+genuinely ambiguous: a member id typed into a field might be a parameter, or it might be a
+constant the flow always uses, and the two are indistinguishable from the outside. A wrong
+inference produces a capability that is silently hardwired or silently over-parameterized. The
+diff still runs, as a warning in the transcript, which is the right weight for a heuristic.
+
+Known weakness, and this is the sharp one. A parameter that is genuinely used but wrongly
+typed passes every validator in the system. Declare `initial_deposit` as `string` when it is a
+currency, or `member_id` as `integer` when the application zero pads it, and nothing objects:
+the name is valid, it is referenced by a step, it is not sensitive, and the run succeeded. The
+type is a promise to the caller about what to pass and what comes back, and it is checked by
+nothing at discovery time. It surfaces on the first replay with a real value, as a validation
+error on a screen nobody expected, or worse as a lookup that silently finds the wrong record.
+Closing it means replaying the capability with a second set of inputs before approving it,
+which is what the draft to approved gate in the stretch goals is actually for.
+
+## 0015. A blocked action is fed back, not fatal
+
+Phase 4, step 4.
+
+A refused action returns a tool_result telling the model the direction is closed. The run ends
+only after three CONSECUTIVE refusals, and the counter resets on any action that succeeds.
+
+A single block is usually the model being reasonable and wrong. It sees a link to the fault
+console, or tries a URL it guessed from a pattern, and policy says no. That is the guardrail
+working exactly as intended, and it carries information the model can use: this route is
+closed, take another. Ending the run there would throw away a discovery that is otherwise
+going fine, and would make the policy gate look like a failure mode rather than a boundary.
+
+Three consecutive is the signal that something else is happening: the model has decided the
+blocked route is the only route and is now trying variations of it. That is not progress and
+more turns will not produce any, so the run stops with PolicyBlockedResult naming the rule.
+Consecutive rather than cumulative matters, because a run that hits an early dead end, backs
+out and completes the goal is a successful run, and counting its one block against it forever
+would be wrong.
+
+Rejected: terminate on the first block, on the grounds that anything touching a boundary is
+suspect and a person should look. It is defensible in a stricter setting. It was rejected
+because it makes the guardrail expensive to have: every over-cautious allowlist entry becomes
+an abandoned run, and the pressure that creates is to loosen the allowlist, which is the
+opposite of what anyone wants.
+
+Known weakness: three consecutive is a heuristic with no evidence behind it. It is small
+enough to catch a loop quickly and large enough to survive two honest mistakes, which is a
+judgement rather than a measurement. It is also per run rather than per rule, so three
+different rules refusing once each looks identical to one rule refusing three times, when the
+first is much more likely to be a confused model and the second a determined one.
+
+## 0016. Gemini, chosen on cost, made cheap to reverse by the protocol
+
+Phase 4, step 4. See also 0008, which records the API surface within Gemini.
+
+The provider moved from Anthropic to Gemini for cost. Gemini has a usable free tier, this is a
+take home rather than a funded system, and a discovery loop that burns twenty multimodal turns
+per run makes that difference concrete rather than theoretical.
+
+What made it a cheap decision to make, and the reason it is recorded as a decision at all, is
+that the `ModelClient` protocol had already confined every provider shape to one module. The
+switch touched `client.py` and nothing else: no change to the loop, the tools, the transcript,
+the prompt or any test, because none of them had ever seen a provider type. The protocol was
+not built in anticipation of this, it was built so `ScriptedClient` could substitute for a real
+model, and the portability fell out of it. That is the argument for the seam, and it is worth
+more than the argument for either provider.
+
+Rejected: staying on Anthropic and accepting the cost, or building an abstraction over both
+and choosing at runtime. The first is a real option and would have meant no work at all. The
+second was rejected outright as the kind of premature generality design rules section 8 warns
+about: two providers behind one interface, with one of them never exercised, is an interface
+designed from imagination.
+
+Known weakness: a free tier model is a weaker model. It is likelier to need more turns to
+reach the same goal, likelier to misread a dense table, and likelier to point at the wrong ref,
+which `describe()` will faithfully convert into a perfect locator for the wrong control. The
+practical consequence is that `max_steps` at 25 may prove too tight and need raising, and that
+a run failing is weaker evidence about the system than it would be with a stronger model. The
+rate limit compounds it: the free tier sits near ten requests a minute, which is why the client
+retries 429 with backoff, and a long run pauses rather than fails.
+
+## 0017. The redactor cannot see inside a screenshot
+
+Phase 4, step 4.
+
+Every text write in the evidence writer is serialized first and redacted second, on the
+serialized string rather than on the object, so a sensitive value cannot survive in a field
+nobody remembered to redact. Screenshots bypass that entirely, because a PNG is bytes and the
+redactor reads text.
+
+This is a real hole in invariant 6 and it is stated here rather than left to be discovered. A
+screenshot of the member detail screen contains the member name, the account numbers and the
+balances, rendered as pixels, written to disk unmodified. In this project the data is
+fabricated, so the cost is zero. In the environment this stands in for, evidence directories
+would be full of regulated financial data in a form no redactor can touch.
+
+The options, none of which are built: do not capture screenshots at all, which loses the
+richer failure signal the brief asks for; capture them and treat the evidence directory as
+regulated data with the access controls that implies, which is what a real deployment would
+have to do anyway; or redact the image before writing it, by blanking the boxes of elements
+whose values came from parameters marked pii, which the Observation already carries the
+geometry for. The third is genuinely feasible here and is the interesting one, because
+`ObservedElement.box` exists precisely because bounding boxes were recorded. It is phase 8 work
+and is noted there rather than done here.
