@@ -128,7 +128,11 @@ class DiscoveryRun:
         surface_descriptor: SurfaceDescriptor,
         limits: DiscoveryLimits | None = None,
         tools: list[ToolSpec] | None = None,
+        on_observation: Any | None = None,
     ) -> None:
+        # A callback rather than an EvidenceWriter, so the loop stays unaware of what
+        # evidence is and the dependency points one way only.
+        self._on_observation = on_observation
         self.goal = goal
         self.surface = surface
         self.client = client
@@ -292,6 +296,8 @@ class DiscoveryRun:
     def _observe(self) -> Any:
         observation = self.surface.observe()
         self._observation = observation
+        if self._on_observation is not None:
+            self._on_observation(observation)
         digest = hash_observation(observation.aria_yaml)
         self._event(EventKind.OBSERVATION, url=observation.url, hash=digest)
 
@@ -560,6 +566,7 @@ def run_discovery(
     surface_descriptor: SurfaceDescriptor,
     limits: DiscoveryLimits | None = None,
     tools: list[ToolSpec] | None = None,
+    on_observation: Any | None = None,
 ) -> DiscoveryOutcome:
     """Run one discovery attempt. The RunResult is on `.result`, the transcript on `.transcript`."""
     return DiscoveryRun(
@@ -571,4 +578,5 @@ def run_discovery(
         surface_descriptor=surface_descriptor,
         limits=limits,
         tools=tools,
+        on_observation=on_observation,
     ).run()
