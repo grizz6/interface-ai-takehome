@@ -271,7 +271,7 @@ def valid_capability(**overrides: Any) -> Capability:
             )
         },
         "provenance": Provenance(
-            discovered_by_model="example-model",
+            discovered_by_model="gemini-3-flash-preview",
             discovery_run_id="run-20260910-0001",
             recorded_at=datetime(2026, 9, 10, 12, 5, tzinfo=UTC),
             goal_text="Open a savings sub-account for member 100001 and reach confirmation.",

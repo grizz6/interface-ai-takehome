@@ -5,7 +5,7 @@ requires-python = ">=3.11"
 dependencies = [
     "playwright>=1.60",  # mode="ai" and boxes are not available before this
     "pydantic>=2",
-    "anthropic",
+    "google-genai>=2.3.0",  # Interactions API needs 2.3 or later
     "flask",
     "python-dotenv",
     "pyyaml",  # record-time syntax check on Signal.aria_template
@@ -19,7 +19,7 @@ dev = [
 
 [tool.mypy]
 python_version = "3.11"
-files = ["src/models", "src/replay", "src/surface", "src/policy"]
+files = ["src/models", "src/replay", "src/surface", "src/policy", "src/discovery"]
 strict = true
 
 [[tool.mypy.overrides]]
