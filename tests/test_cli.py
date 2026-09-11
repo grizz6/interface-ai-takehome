@@ -162,9 +162,16 @@ def test_a_real_run_directory_holds_no_credential_shaped_strings(
     assert not scan([directory])
 
 
-def test_running_the_suite_never_writes_into_the_repository_evidence_directory() -> None:
-    """Every test passes --evidence-dir. A run directory here means one of them did not."""
-    strays = [p.name for p in Path("evidence").glob("*") if p.is_dir() and RUN_ID.match(p.name)]
+def test_running_the_suite_never_writes_into_the_repository_evidence_directory(
+    evidence_dirs_at_session_start: set[str],
+) -> None:
+    """Every test passes --evidence-dir. A NEW run directory here means one of them did not.
+
+    Compared against a snapshot taken before the session rather than against an empty
+    directory, because real discovery runs write here too and those are not test litter.
+    """
+    now = {p.name for p in Path("evidence").glob("*") if p.is_dir() and RUN_ID.match(p.name)}
+    strays = sorted(now - evidence_dirs_at_session_start)
     assert not strays, f"tests wrote run directories into evidence/: {strays}"
 
 

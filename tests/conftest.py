@@ -300,6 +300,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -373,4 +374,15 @@ def surface(policy_config: PolicyConfig) -> Iterator[object]:
         yield web
     finally:
         web.close()
+
+
+@pytest.fixture(scope="session")
+def evidence_dirs_at_session_start() -> set[str]:
+    """Run directories present in evidence/ before any test ran.
+
+    Snapshotted rather than asserting the directory is empty, because real discovery runs
+    write here too and a developer's run is not a test's litter.
+    """
+    root = Path("evidence")
+    return {p.name for p in root.glob("*") if p.is_dir()} if root.exists() else set()
 
