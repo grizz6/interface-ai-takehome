@@ -233,3 +233,84 @@ match it. That is precisely the failure mode 0004 exists to prevent, and the rea
 is that Playwright exposes no public parser for the aria template dialect, so there is nothing
 to validate against short of writing one. The gap is real and is recorded here rather than
 quietly carried.
+
+## 0006. Where describe() lives, and why XPath here is not a CSS fallback
+
+Phase 3.
+
+### describe() belongs to the surface, not to the recorder
+
+Turning a per-snapshot ref into a durable `LocatorBundle` is a method on `Surface`. Two things
+force it there. It needs the observation that produced the ref, and it needs the live page, in
+order to verify that each candidate tier actually resolves to exactly one element right now.
+A recorder handed a transcript afterwards has neither: the refs are dead the moment the next
+snapshot is taken, and the page has moved on. Invariant 9 says the conversion happens at the
+moment of the action, and the only component holding the session at that moment is the surface.
+Putting it there also splits the work along the right line for section 3.7: a desktop surface
+reimplements `describe()` against the UI Automation tree with its own notion of a container,
+while the recorder stays surface agnostic and simply collects whatever bundles it is handed.
+
+Rejected: keep the surface a thin driver and do the interpretation in the recorder. On paper
+that is cleaner layering, I/O on one side and meaning on the other. It was rejected because the
+recorder would then need a live handle back into the surface to verify its candidates, which is
+the same coupling with an extra hop, or it would have to emit unverified bundles. The second is
+worse than it sounds: a bundle that has never successfully resolved even once is not a locator,
+it is a guess that will be discovered wrong during replay rather than during recording, which is
+exactly the ordering DECISIONS.md 0004 exists to prevent.
+
+Known weakness: the surface now does two jobs, perceiving and interpreting, and `web.py` is 394
+lines against the 300 line convention in section 9. The tier logic is also only notionally
+shared: a second surface reimplements all four tiers rather than reusing them. If a third
+surface ever appears, tier selection should be lifted into a shared component that takes an
+`Observation` and returns candidate specs, leaving each surface responsible only for verifying
+them. That refactor is cheap now and gets expensive once two surfaces have diverged.
+
+### A semantic relation expressed in XPath is not the same thing as a CSS fallback
+
+Tiers 2 and 3 compile to XPath. That does not make them brittle in the way tier 4 is, and the
+difference is what the expression names rather than which syntax it uses.
+
+Tier 2 compiles to `//tr[./*[normalize-space(.)="Nickname"]]` and then asks `get_by_role` for
+the textbox inside it. What that names is a relationship a person would say out loud: the field
+in the row labelled Nickname. Rename the element id, restyle the table, replace the input with a
+different widget carrying the same role, and it still resolves. Tier 4 compiles to
+`#ctl00_ContentPlaceHolder1_txtNickname`, which names one element by one attribute that exists
+for no reason except that a framework generated it. Both are strings in a selector argument.
+Only one survives the page being rebuilt.
+
+This matters beyond pedantry because the winning tier is recorded on every run as drift
+telemetry. If XPath were classed as brittle alongside CSS, every tier 2 resolution would report
+degradation, and a signal that fires constantly is a signal nobody reads.
+
+Rejected: build tiers 2 and 3 out of Playwright's own `filter` and `has` chaining and avoid raw
+selector strings altogether. This was genuinely attractive and `locator("table").filter(...)`
+reads better than an axis expression. It was rejected on evidence: against this app,
+`filter(has_text="Deposit Accounts")` matched two tables, because an ancestor table contains the
+text as well, while `ancestor::table[1]` matched exactly one. Expressing "the nearest enclosing
+region" needs an axis, and the locator API has no axis.
+
+Known weakness: XPath 1.0 is the weakest link in the chain. It has no escape character, so
+quoting goes through a `concat()` helper. `normalize-space(.)` on a row matches concatenated
+descendant text and will match more broadly on a denser page than it does here. And the
+expression names a `tr`, which is HTML specific, so tier 2 is semantic in intent but HTML shaped
+in implementation. That seam is precisely where a desktop surface will need its own code rather
+than a shared one.
+
+### An unresolved conflict this phase surfaced, not resolved
+
+An element whose only available locator is CSS cannot currently be recorded at all. The one real
+example is the navigation control implemented as a span with an inline onclick: it has no ARIA
+role, so the aria snapshot reports it only as a bare text node, and `get_by_role` cannot see it.
+Tiers 1 to 3 are all role based, so all three fail, leaving tier 4 alone. But `LocatorBundle`
+refuses a `css_fallback` primary, so no bundle can be built.
+
+Both rules are deliberate. The schema forbids a brittle primary so an approved artifact never
+rests on a generated DOM id. Tier 4 exists because controls like this one are real. They
+collide, and invariant 1 says code adapts to the schema rather than the other way round, so
+`describe()` raises `LocatorUnresolved` with the reason and the conflict is recorded here
+instead of being settled by quietly editing a validator. Three ways out for whoever takes it:
+permit a brittle primary when the bundle records why no other tier applied, fix the control in
+the target application, which in the real environment means asking a vendor and waiting, or add
+a text relation tier that can address role-less elements by their visible text and their
+position relative to a named neighbour. The third is probably the right answer, and it is a
+schema change, which is why it is a proposal here rather than a commit.
