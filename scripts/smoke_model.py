@@ -50,6 +50,19 @@ def main() -> int:
 
     try:
         turn = client.complete("Answer in as few words as possible.", [UserMessage(text=PROMPT)], [])
+    except ValueError as exc:
+        # The SDK says it got no usable key while our own check says the name is set. Those
+        # two facts together mean the value is empty or whitespace, and they establish it
+        # from behaviour rather than by looking at the file, which invariant 6 forbids.
+        if "API key" in str(exc):
+            print(
+                "The name GEMINI_API_KEY is set but the SDK found no usable key, so the "
+                "value is empty. Put the key after the equals sign in .env.",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        return 2
     except Exception as exc:  # noqa: BLE001
         # Deliberately broad, and converted to a reported exit code rather than swallowed.
         # A smoke test exists to name whatever went wrong, and the useful failures here are
