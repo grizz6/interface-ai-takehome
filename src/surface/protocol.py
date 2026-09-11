@@ -10,7 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from src.models.capability import Signal
+from src.models.capability import Signal, WaitSpec
+from src.models.common import RiskClass
 from src.models.locator import LocatorBundle
 from src.surface.actions import Action, ActionOutcome
 from src.surface.observation import Observation
@@ -84,8 +85,19 @@ class Surface(Protocol):
         """Find the control a bundle describes, trying each tier in order."""
         ...
 
-    def act(self, action: Action) -> ActionOutcome:
-        """Perform an action, after the policy gate has allowed it."""
+    def act(
+        self,
+        action: Action,
+        *,
+        wait: WaitSpec | None = None,
+        risk: RiskClass | None = None,
+    ) -> ActionOutcome:
+        """Perform an action, after the policy gate has allowed it.
+
+        `wait` is the recorded WaitSpec for this step, applied after the action lands.
+        `risk` is the recorded risk classification, which exists during replay and does not
+        during discovery; the gate falls back to control names when it is None.
+        """
         ...
 
     def evaluate(self, signal: Signal) -> bool:

@@ -287,3 +287,90 @@ def assert_error(exc: Any, fragment: str) -> None:
     """Assert the SPECIFIC validation error, not merely that something raised."""
     message = str(exc.value)
     assert fragment in message, f"expected {fragment!r} in validation error:\n{message}"
+
+
+# ---------------------------------------------------------------------------
+# Integration fixtures: the real target app on a free port, a real Chromium.
+# Session scoped because one browser context per surface is invariant 7, and
+# because launching a browser per test would make the suite unpleasant to run.
+# ---------------------------------------------------------------------------
+import os
+import socket
+import subprocess
+import sys
+import time
+from collections.abc import Iterator
+
+import pytest
+
+from src.models.common import ActionType
+from src.models.policy import PolicyConfig
+from src.policy.gate import PolicyGate
+
+
+def _free_port() -> int:
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = int(sock.getsockname()[1])
+    sock.close()
+    return port
+
+
+@pytest.fixture(scope="session")
+def live_app() -> Iterator[str]:
+    port = _free_port()
+    process = subprocess.Popen(
+        [sys.executable, "target_app/app.py"],
+        env={**os.environ, "PORT": str(port)},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.STDOUT,
+    )
+    deadline = time.time() + 25
+    while time.time() < deadline:
+        try:
+            socket.create_connection(("127.0.0.1", port), 0.3).close()
+            break
+        except OSError:
+            time.sleep(0.2)
+    else:
+        process.kill()
+        pytest.fail("target app did not start")
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        process.terminate()
+        try:
+            process.wait(5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+
+
+@pytest.fixture(scope="session")
+def policy_config() -> PolicyConfig:
+    """Realistic: everything under the app is allowed except the developer routes."""
+    return PolicyConfig(
+        allowed_hosts=["127.0.0.1", "localhost"],
+        allowed_path_patterns=[r"^/"],
+        denied_path_patterns=[r"^/dev/"],
+        allowed_actions=[
+            ActionType.NAVIGATE,
+            ActionType.CLICK,
+            ActionType.TYPE,
+            ActionType.SELECT,
+            ActionType.WAIT_FOR,
+        ],
+        risky_action_policy="flag",
+        risky_control_names=["Confirm"],
+    )
+
+
+@pytest.fixture(scope="session")
+def surface(policy_config: PolicyConfig) -> Iterator[object]:
+    from src.surface.web import WebSurface
+
+    web = WebSurface(policy_config, PolicyGate(policy_config), headless=True)
+    try:
+        yield web
+    finally:
+        web.close()
+

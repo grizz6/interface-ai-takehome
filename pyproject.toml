@@ -18,7 +18,7 @@ dev = [
 
 [tool.mypy]
 python_version = "3.11"
-files = ["src/models", "src/replay"]
+files = ["src/models", "src/replay", "src/surface", "src/policy"]
 strict = true
 
 [tool.pytest.ini_options]
