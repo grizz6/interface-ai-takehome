@@ -366,3 +366,76 @@ and neither is built yet. `VariantOverride.step_overrides` can already carry a r
 bundle per tenant, which handles it once discovered. And because the winning tier is recorded
 on every run, a fleet-wide report of text_relation primaries is the natural place to look first
 when a tenant upgrade breaks a batch of capabilities.
+
+## 0008. Gemini through the Interactions API, run statelessly
+
+Phase 4, step 1. The provider switch from Anthropic to Gemini was directed rather than chosen,
+so what is recorded here is the part that was actually a decision: which of Gemini's two
+surfaces to build against, and how to use it.
+
+Checked against the current documentation rather than from memory, because this changed
+recently. `client.models.generate_content` still exists, but its function calling guide is now
+published under a heading marked Legacy, while the Interactions API went generally available in
+June 2026 and is documented as the recommended path for new projects. Building a new client
+against the surface Google labels legacy would be a decision that needs defending in six months
+and cannot be.
+
+The part worth arguing is that the Interactions API is stateful by default and this client does
+not use that. Interactions can hold conversation state server side and be continued with
+`previous_interaction_id`. We pass `store=False` and send the whole transcript in `input` on
+every turn. Three reasons, in order of weight. The recorder compiles the transcript into a
+Capability, so the transcript has to be a local object we own rather than a handle to something
+held elsewhere. Evidence has to be reproducible and archivable into `evidence/`, and half a run
+living on a vendor's server is not evidence we can ship. And the `ModelClient` protocol is
+deliberately stateless, `complete(system, messages, tools)`, which is what lets `ScriptedClient`
+substitute for the real one so completely that the loop cannot tell them apart; a server side
+conversation graph does not have a scriptable equivalent.
+
+Rejected: server side state with `previous_interaction_id`. It sends less over the wire on every
+turn, which on a twenty step run with a growing observation history is not a small saving, and
+it is the mode the API is designed around. It was rejected because it trades an artifact we own
+for a handle we do not, and this whole project is about producing an artifact.
+
+Also rejected, and explicitly ruled out by the brief for this step: the OpenAI compatibility
+endpoint. It would have made the client shape more familiar and is a dead end for function
+calling fidelity.
+
+Known weakness: the translation in `to_input_payload` and `to_model_turn` is written against
+the SDK's own type definitions, which were read directly, but it has never made a live call.
+There is no key in this environment and no test here touches a network, so the request shape is
+asserted and the round trip is not. The first real discovery run is where that gets tested, and
+it is the most likely thing in this module to need a correction. The translation functions are
+module level and pure precisely so that the correction is a small one.
+
+## 0009. The error screens are inside the allowlist
+
+Phase 4, step 1.
+
+`config/policy.json` permits `/maintenance`, `/maintenance/continue` and `/session-expired`,
+which looks wrong at a glance: every one of them is a failure state, and an allowlist that
+includes failure states reads like an allowlist that has stopped discriminating.
+
+It is the opposite. The interstitial recovery in the artifact schema works by arriving at the
+maintenance notice and clicking Continue. If those paths were denied, the gate would block the
+system's own recovery: the run would land on the maintenance screen, the arrival check would
+refuse the URL it had just landed on, and a condition classified as recoverable would be
+converted into a `PolicyViolation`. The same holds for the session expired screen, which the
+escalation path needs to reach in order to hand a human a session worth repairing. Denying a
+path you will predictably land on does not stop you landing there. It only removes your ability
+to do anything once you have.
+
+The principle underneath, and the one to apply when this list grows: the allowlist describes
+where the agent may legitimately BE, not where things are going well.
+
+Rejected: deny the error paths and special case the recovery, letting the gate be bypassed for
+a known set of recovery navigations. That keeps the allowlist looking pure. It was rejected
+because a bypass is a hole, and a hole with a good reason attached is still the thing an
+attacker or a confused model looks for. Invariant 3 says the gate is the constraint that cannot
+be argued past, and a gate with a documented exception list is a gate that can be.
+
+Known weakness: the allowlist is now a mix of two categories, ordinary application routes and
+screens that only appear when something has gone wrong, with nothing in the file marking which
+is which. A reader six months from now sees one flat list and cannot tell that
+`/session-expired` is load bearing for escalation rather than a leftover. A `reason` field per
+pattern would fix it and would also make the file self documenting, at the cost of no longer
+being a direct `PolicyConfig` dump, which is what currently gives validation at load for free.
