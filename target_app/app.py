@@ -305,6 +305,24 @@ def dev_faults_arm() -> WerkzeugResponse:
     return redirect(url_for("dev_faults"))
 
 
+@app.get("/dev/reset")
+def dev_reset() -> str:
+    """Return the application to its seeded baseline.
+
+    Replay has to start from a known state. Without this, sub-accounts opened by one run
+    accumulate for the life of the process and the issued account number keeps climbing, so
+    the same capability replayed twice would not produce the same outputs. Lives under /dev/
+    on purpose: the allowlist rule that keeps the agent out of the fault console keeps it out
+    of here too.
+    """
+    discarded = sum(len(accounts) for accounts in OPENED.values())
+    OPENED.clear()
+    _issued[0] = 0
+    session.pop("armed_fault", None)
+    session.pop("interstitial_next", None)
+    return render_template("dev_reset.html", title=_title("reset"), discarded=discarded)
+
+
 @app.get("/maintenance")
 def maintenance() -> str:
     return render_template("maintenance.html", title=_title("maintenance"))

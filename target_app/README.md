@@ -56,6 +56,7 @@ Each site carries a comment in the template saying which tier it is there to exe
 | POST | `/member/<id>/subaccount/confirm` | The irreversible step. Issues an account number and shows the confirmation |
 | GET | `/dev/faults` | Fault console |
 | POST | `/dev/faults` | Arms or clears a fault |
+| GET | `/dev/reset` | Returns the app to its seeded state: discards opened sub-accounts, resets the account number counter, clears any armed fault |
 | GET | `/maintenance` | Interstitial notice with a Continue control |
 | GET | `/maintenance/continue` | Dismisses the interstitial and resumes the original page |
 | GET | `/session-expired` | Session expired screen |
@@ -80,8 +81,10 @@ pair on the member panel needs in order to be meaningful.
 **Sub-accounts opened through flow 2 persist in module level state, not in a database.** They
 are held in the `OPENED` dict in `app.py` and appear in the member's Deposit Accounts table
 from the moment they are confirmed. They survive for the life of the process and are gone the
-moment the app restarts. Restart the app to return every member to the seeded baseline, and
-expect account numbers to restart at the same value, since the counter is process local too.
+moment the app restarts. Hit `/dev/reset` to return every member to the seeded baseline without restarting the
+app. It discards opened sub-accounts, resets the account number counter, and clears any
+armed fault, which is what makes two replays of the same capability produce the same
+outputs. Restarting the process does the same thing.
 
 Not found and permission denied both return HTTP 200 with a distinct screen rather than a
 404 or a 403. That is on purpose: these are business outcomes, and the automation is meant

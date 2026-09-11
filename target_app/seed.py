@@ -30,6 +30,7 @@ VARIANTS: dict[str, dict[str, Any]] = {
             "error": "System Error",
             "faults": "Fault Console",
             "loan_servicing": "Loan Servicing",
+            "reset": "State Reset",
         },
         "labels": {
             "nav_home": "Home",
@@ -59,6 +60,8 @@ VARIANTS: dict[str, dict[str, Any]] = {
             "clear": "Clear Armed Fault",
             "currently_armed": "Currently armed",
             "none_armed": "Nothing armed",
+            "accounts_cleared": "Sub-accounts discarded",
+            "reset_link": "Reset application state",
         },
         "messages": {
             "home_intro": "Select Member Lookup to begin servicing a member record.",
@@ -71,6 +74,7 @@ VARIANTS: dict[str, dict[str, Any]] = {
             "review_intro": "Review the request below and select Confirm to open the account.",
             "faults_intro": "Arm a runtime fault. It fires once on the next page load, then disarms.",
             "loan_servicing": "Loan servicing is not available in this console. A sub-account cannot be opened against a loan account.",
+            "reset": "The application has been returned to its seeded state.",
         },
         "errors": {
             "member_id_required": "Enter a Member ID.",
