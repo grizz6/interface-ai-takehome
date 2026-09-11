@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from typing import get_args
 
 from pydantic import TypeAdapter
 
@@ -78,3 +79,12 @@ def test_run_result_union_discriminates_on_kind() -> None:
         restored = adapter.validate_json(adapter.dump_json(original))
         assert type(restored) is type(original)
         assert restored == original
+
+
+def test_exit_codes_cover_every_kind_in_the_run_result_union() -> None:
+    """Derived from the union itself, so adding a sixth result kind fails this test."""
+    members = get_args(get_args(RunResult)[0])
+    kinds = {member.model_fields["kind"].default for member in members}
+    assert kinds == set(EXIT_CODES), "EXIT_CODES and the RunResult union have diverged"
+    assert len(set(EXIT_CODES.values())) == len(EXIT_CODES), "exit codes must be distinct"
+

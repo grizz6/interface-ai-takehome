@@ -97,3 +97,48 @@ def test_text_extraction_needs_no_attribute() -> None:
 
 def test_signal_used_by_the_fixture_is_valid() -> None:
     assert text_signal("Member Detail").kind is SignalKind.TEXT_PRESENT
+
+
+# -- user supplied regexes are compiled at record time, not at replay time -------
+def test_a_broken_signal_pattern_is_rejected_at_record_time() -> None:
+    with pytest.raises(ValidationError) as exc:
+        Signal(kind=SignalKind.TEXT_PRESENT, pattern="Member (")
+    assert_error(exc, "pattern is not a valid regular expression")
+    assert_error(exc, "rejected at record time rather than at replay time")
+    assert_error(exc, "'Member ('")
+
+
+def test_a_broken_url_pattern_is_rejected_at_record_time() -> None:
+    with pytest.raises(ValidationError) as exc:
+        Signal(kind=SignalKind.URL_MATCHES, url_pattern="/member/[0-9")
+    assert_error(exc, "url_pattern is not a valid regular expression")
+    assert_error(exc, "rejected at record time")
+
+
+def test_a_broken_strip_pattern_is_rejected_at_record_time() -> None:
+    with pytest.raises(ValidationError) as exc:
+        ExtractionSpec(
+            locator=role_name_bundle("cell", "Balance"),
+            source="text",
+            parse="currency",
+            strip_pattern="[$,",
+        )
+    assert_error(exc, "strip_pattern is not a valid regular expression")
+    assert_error(exc, "rejected at record time")
+
+
+def test_valid_regexes_pass_through_untouched() -> None:
+    signal = Signal(kind=SignalKind.URL_MATCHES, url_pattern=r"^/member/\d+$")
+    spec = ExtractionSpec(
+        locator=role_name_bundle("cell", "Balance"),
+        source="text",
+        parse="currency",
+        strip_pattern=r"[$,]",
+    )
+    assert signal.url_pattern == r"^/member/\d+$"
+    assert spec.strip_pattern == r"[$,]"
+
+
+def test_a_none_pattern_is_still_legal() -> None:
+    assert Signal(kind=SignalKind.TEXT_PRESENT, text="Member Detail").pattern is None
+

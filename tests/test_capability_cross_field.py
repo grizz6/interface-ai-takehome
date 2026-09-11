@@ -27,6 +27,8 @@ from src.models import (
     InsertedStep,
     ParamBinding,
     ParamSpec,
+    RecoveryAction,
+    RecoveryRule,
     RiskClass,
     Step,
     StepPatch,
@@ -213,3 +215,39 @@ def test_version_must_be_semver() -> None:
     with pytest.raises(ValidationError) as exc:
         valid_capability(version="1.0")
     assert_error(exc, "String should match pattern")
+
+
+# -- 9. outcome checkpoints name existing steps ---------------------------------
+def test_an_outcome_may_not_check_after_a_nonexistent_step() -> None:
+    outcomes = valid_outcomes()
+    outcomes[0] = outcomes[0].model_copy(update={"check_after_step": 42})
+    with pytest.raises(ValidationError) as exc:
+        valid_capability(known_outcomes=outcomes)
+    assert_error(exc, "outcome 'member_not_found' checks after nonexistent step index 42")
+
+
+def test_an_outcome_may_check_after_an_existing_step() -> None:
+    outcomes = valid_outcomes()
+    outcomes[0] = outcomes[0].model_copy(update={"check_after_step": 0})
+    assert valid_capability(known_outcomes=outcomes).known_outcomes[0].check_after_step == 0
+
+
+# -- 10. recovery scopes name existing steps ------------------------------------
+def test_a_recovery_may_not_scope_to_a_nonexistent_step() -> None:
+    rule = RecoveryRule(
+        name="dismiss_maintenance_notice",
+        detect=text_signal("scheduled maintenance"),
+        action=RecoveryAction.DISMISS,
+        action_target=role_name_bundle("link", "Continue"),
+        applies_to_steps=[0, 42],
+    )
+    with pytest.raises(ValidationError) as exc:
+        valid_capability(recoveries=[rule])
+    assert_error(
+        exc, "recovery 'dismiss_maintenance_notice' applies to nonexistent step index 42"
+    )
+
+
+def test_a_recovery_with_no_scope_applies_everywhere() -> None:
+    assert valid_capability().recoveries[0].applies_to_steps is None
+

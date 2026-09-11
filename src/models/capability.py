@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, model_validator
 from src.models.common import (
     STRICT,
     ActionType,
+    RegexPattern,
     ApprovalStatus,
     RecoveryAction,
     RiskClass,
@@ -42,8 +43,8 @@ class Signal(BaseModel):
 
     kind: SignalKind
     text: str | None = None
-    pattern: str | None = None
-    url_pattern: str | None = None
+    pattern: RegexPattern = None
+    url_pattern: RegexPattern = None
     locator: LocatorBundle | None = None
     frame_path: list[str] = Field(default_factory=list)
     case_sensitive: bool = False
@@ -202,7 +203,7 @@ class ExtractionSpec(BaseModel):
     source: Literal["text", "value", "attribute"]
     attribute: str | None = None
     parse: Literal["raw", "currency", "integer", "decimal", "date"]
-    strip_pattern: str | None = None
+    strip_pattern: RegexPattern = None
     required: bool = True
 
     @model_validator(mode="after")
@@ -509,5 +510,31 @@ class Capability(BaseModel):
                 if code not in codes:
                     raise ValueError(
                         f"override {variant_id!r} overrides undeclared outcome {code!r}"
+                    )
+        return self
+
+    @model_validator(mode="after")
+    def _outcome_checks_name_existing_steps(self) -> Capability:
+        indices = self._step_indices()
+        for outcome in self.known_outcomes:
+            if outcome.check_after_step is None:
+                continue
+            if outcome.check_after_step not in indices:
+                raise ValueError(
+                    f"outcome {outcome.code!r} checks after nonexistent step index "
+                    f"{outcome.check_after_step}"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _recovery_scopes_name_existing_steps(self) -> Capability:
+        indices = self._step_indices()
+        for rule in self.recoveries:
+            if rule.applies_to_steps is None:
+                continue
+            for index in rule.applies_to_steps:
+                if index not in indices:
+                    raise ValueError(
+                        f"recovery {rule.name!r} applies to nonexistent step index {index}"
                     )
         return self

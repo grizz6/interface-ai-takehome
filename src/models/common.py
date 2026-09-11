@@ -8,12 +8,40 @@ the failure mode that makes a recorded flow drift away from what it claims to do
 """
 from __future__ import annotations
 
+import re
 from enum import StrEnum
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AfterValidator, BaseModel, ConfigDict, ValidationInfo
 
 STRICT = ConfigDict(extra="forbid", frozen=True)
 """Shared config for models that record facts. Frozen per design rules section 9."""
+
+
+def _reject_uncompilable_regex(value: str | None, info: ValidationInfo) -> str | None:
+    """Compile a user supplied regex during schema validation, not during replay.
+
+    A pattern that only blows up when the executor first runs it is a pattern that already
+    got through human review and into an approved artifact. See DECISIONS.md 0004.
+    """
+    if value is None:
+        return value
+    try:
+        re.compile(value)
+    except re.error as exc:
+        raise ValueError(
+            f"{info.field_name} is not a valid regular expression, so the artifact was "
+            f"rejected at record time rather than at replay time: {value!r} does not "
+            f"compile ({exc})"
+        ) from exc
+    return value
+
+
+RegexPattern = Annotated[str | None, AfterValidator(_reject_uncompilable_regex)]
+"""A user supplied regular expression, compiled at schema validation time.
+
+Optional by construction: None is a legal value and is passed through untouched.
+"""
 
 
 class SurfaceKind(StrEnum):
