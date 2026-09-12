@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from collections.abc import Mapping
 from typing import Annotated, Literal
 
 import yaml
@@ -266,6 +267,22 @@ class BusinessOutcomeSpec(BaseModel):
     )
     terminal: bool = True
     partial_outputs: list[str] = Field(default_factory=list)
+
+
+class ParamDescriptor(BaseModel):
+    """A parameter's name and how sensitive it is. Never its value.
+
+    A projection of ParamSpec for anything written to disk that has to say which inputs a run
+    was given. Built from the declared schema rather than from the supplied values, so the
+    code path that could leak one does not exist. See DECISIONS.md 0033.
+    """
+
+    model_config = STRICT
+
+    name: str
+    sensitivity: Sensitivity
+    required: bool
+    supplied: bool
 
 
 class RecoveryRule(BaseModel):
@@ -566,3 +583,16 @@ class Capability(BaseModel):
                         f"recovery {rule.name!r} applies to nonexistent step index {index}"
                     )
         return self
+
+
+def describe_params(capability: Capability, supplied: Mapping[str, object]) -> list[ParamDescriptor]:
+    """Names and sensitivities, read off the schema. The values are consulted for one boolean."""
+    return [
+        ParamDescriptor(
+            name=spec.name,
+            sensitivity=spec.sensitivity,
+            required=spec.required,
+            supplied=spec.name in supplied,
+        )
+        for spec in capability.inputs
+    ]

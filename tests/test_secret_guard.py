@@ -176,6 +176,33 @@ def test_no_credential_has_reached_evidence_or_capabilities() -> None:
     )
 
 
+def scan_run_directory(directory: Path, redacted: dict[str, str] | None = None) -> list[Finding]:
+    """Every byte of one completed run, including dom.html and aria.yaml.
+
+    Those two are the new exposure and the most likely place a real value survives. A DOM dump
+    is the whole page including hidden inputs and every value the operator typed; an aria
+    snapshot carries every accessible name on screen. Both are text, both are written by the
+    same redactor as everything else, and both are large enough that nobody reads them.
+
+    `redacted` is what the caller declared with --redact. Finding one of those in a completed
+    run means the redaction seam was bypassed somewhere, which is a harder failure than a
+    credential shaped string: it means a path exists that does not go through the writer.
+    """
+    findings = scan([directory])
+    for name, value in (redacted or {}).items():
+        if not value:
+            continue
+        for path in sorted(directory.rglob("*")):
+            if not path.is_file():
+                continue
+            text = path.read_bytes().decode("utf-8", errors="ignore")
+            if value in text:
+                findings.append(
+                    Finding(str(path), f"unredacted:{name}", _locate(path, text, value))
+                )
+    return findings
+
+
 def tracked_files() -> list[Path]:
     """Every file git tracks, which is exactly the set that can become public.
 

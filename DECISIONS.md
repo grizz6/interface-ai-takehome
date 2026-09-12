@@ -1189,3 +1189,122 @@ objects are identical before and after, which is invariant 7 checked rather than
 
 Rejected: skip the end to end test and assert only on files. That would test the bookkeeping
 and leave the actual claim, that control changes hands on one live session, unverified.
+
+## 0036. failure/ is written for a business outcome too
+
+Phase 8.
+
+Any result that is not `success` gets a `failure/` directory, and that includes
+`business_outcome`. The name is wrong for that case and the contents are not.
+
+A not-found lookup is a correct answer that took a fifth of a second, and invariant 5 exists to
+stop the system calling it a fault. Writing it into a folder called `failure/` cuts against
+that, in the one place a reviewer looks. But the alternative loses something real: the screen
+that produced the outcome, the DOM behind it, and the detect signal that matched are exactly
+what a person needs when an outcome fires that should not have, and that is a live risk here
+because two of the three declared outcomes were hand added rather than observed (0027).
+
+So the artifacts are written and `context.json` carries the actual `result_kind`. Anything
+reading the contents sees `business_outcome`; only the directory name is misleading, and only
+until you open it. A test asserts that field specifically, so the labelling cannot silently
+regress.
+
+Rejected: rename the directory to `diagnostics/`. Honest, and it would have been my choice, but
+the phase spec named `failure/` and a directory name is not worth diverging on without asking.
+Rejected: skip it for business outcomes. It optimizes the folder name at the cost of the
+evidence, which is the wrong trade when the outcome declarations are the least verified part of
+an artifact.
+
+## 0037. screenshots are masked with live geometry, not the recorded hint
+
+Phase 8.
+
+Fields bound to a parameter the capability declares `pii` or `secret` are blacked out at
+capture time with Playwright's own `mask=` on `page.screenshot`, which resolves the locator
+against the page as it stands. The phase spec called for `geometry_hint`.
+
+`geometry_hint` is the bounding box recorded during discovery, and `Rect`'s own docstring in
+the schema says it is "a hint for a human looking at evidence, never a locator". Masking with
+it makes it load bearing. A page that reflows, a longer member name, a validation error
+appearing above the field, and the black box lands next to the value instead of over it. The
+screenshot then looks redacted while not being redacted, which is worse than an obvious hole
+because it invites trust. Live masking puts the box where the field actually is at the moment
+of capture.
+
+The cost is a locator build per masked field per screenshot. Built directly rather than
+resolved, so nothing waits and nothing raises: Playwright ignores a mask locator matching zero
+elements, which is the common case for a field belonging to a different step.
+
+**The limit, stated plainly.** Box masking is best effort. It covers the field the artifact
+knows about. It cannot cover the same value rendered somewhere the artifact does not know
+about: a confirmation banner, a page title, a summary table, a tooltip, an error message
+quoting what was entered. Any of those puts the value in the PNG in plain sight, and no amount
+of masking declared fields will catch it, because the artifact has no record that the value
+appears there at all.
+
+The safer production default is therefore not better masking. It is aria snapshots with field
+level redaction as the primary visual record, which is text and so passes the Redactor like
+everything else, and screenshots only on explicit operator request. That is what this system
+would ship with outside an assessment, and it is the honest recommendation rather than a claim
+that the masking here is sufficient. Repeated in REPORT.md section 6.
+
+Known weakness beyond that: masking is applied by the surface, so a screenshot taken by
+anything that is not the surface bypasses it entirely. Nothing currently does.
+
+## 0038. every run directory records the commit and the policy hash
+
+Phase 8.
+
+`meta.json` carries `git_commit` and `policy_sha256` alongside the path the policy was loaded
+from.
+
+Evidence is read later, by someone who was not there. Two facts govern how to interpret every
+other file in the directory and neither can be recovered afterwards: which code ran, and which
+allowlist it ran under. A replay that was blocked six weeks ago tells you nothing useful unless
+you know whether the rule that blocked it still exists.
+
+Both parts of the policy record are needed. The path alone is worthless, because
+`config/policy.json` is edited in place and the file at that path today is not the file that
+ran. The hash alone is unreadable, because a bare digest does not say what it is a digest of.
+Together they say "this allowlist, exactly this version of it", and a reviewer can check by
+hashing the file themselves. A test does exactly that.
+
+`git_commit` is suffixed `-dirty` when the working tree was not clean, which is the honest
+answer for most development runs and a signal not to trust the commit as a full description.
+
+Rejected: embed the whole policy document in meta.json. It is small enough that this would
+work, and it removes the indirection, but it also copies the allowlist into every run directory
+where it will drift out of sync with nothing to detect that. A hash cannot drift.
+
+Known weakness: `git_commit` degrades to `"unknown"` rather than raising if git is unavailable.
+A run that dies because it could not shell out to git is worse than a run whose provenance is
+one field short.
+
+## 0039. one writer, and the directory shape stopped depending on the caller
+
+Phase 8.
+
+Discovery, replay and escalation all write through `EvidenceWriter`. Nothing else creates a
+file inside a run directory.
+
+Consolidating this found a real gap rather than merely tidying. Discovery accumulates its
+events on the transcript instead of emitting them as it happens, and `run.jsonl` for a
+discovery run existed only because `cmd_discover` remembered to loop over those events and
+replay them into the writer. Any other caller of `run_discovery` produced a directory with no
+event log at all, and the test that compares a discovery directory against a replay directory
+is what surfaced it. Flushing the events is now `write_transcript`'s job, so the shape is a
+property of the writer rather than of whoever called it.
+
+The same reasoning put `write_failure_artifacts` in `src/evidence/failure.py` rather than in
+the replay engine, where it started. Discovery needs the identical post mortem, and two
+subsystems each building their own would drift within a phase.
+
+Rejected: a base class or a mixin that each subsystem inherits. Section 8 rules out plugin
+systems and this is the same instinct one size down. A module level function taking a duck
+typed surface and sink is smaller, and it lets discovery pass no `Step` at all rather than
+inventing one to satisfy an interface.
+
+Known weakness: `interventions/` is still written by `InterventionStore`, not by the evidence
+writer. That is deliberate, because interventions outlive a run and are read by a separate
+process, but it does mean there are two places that write to disk. Both go through the same
+Redactor, and the credential guard walks both.

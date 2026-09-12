@@ -20,21 +20,10 @@ from typing import Final
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.models.capability import Capability
-from src.models.common import ResolutionOutcome, RiskClass, Sensitivity, StuckReason
+from src.models.capability import Capability, ParamDescriptor
+from src.models.common import ResolutionOutcome, RiskClass, StuckReason
 
 STRICT: Final[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
-
-
-class ParamDescriptor(BaseModel):
-    """A parameter's name and how sensitive it is. Never its value."""
-
-    model_config = STRICT
-
-    name: str
-    sensitivity: Sensitivity
-    required: bool
-    supplied: bool
 
 
 class CapturedAction(BaseModel):
@@ -97,23 +86,6 @@ class InterventionRequest(BaseModel):
     params_redacted: list[ParamDescriptor] = Field(default_factory=list)
 
     resolution: InterventionResolution | None = None
-
-    @staticmethod
-    def describe_params(capability: Capability, supplied: dict[str, object]) -> list[ParamDescriptor]:
-        """Names and sensitivities, read off the schema rather than off the values.
-
-        The supplied dict is consulted for one boolean and never for a value, which is why
-        this cannot leak even if someone later adds a field to ParamDescriptor.
-        """
-        return [
-            ParamDescriptor(
-                name=spec.name,
-                sensitivity=spec.sensitivity,
-                required=spec.required,
-                supplied=spec.name in supplied,
-            )
-            for spec in capability.inputs
-        ]
 
 
 def refuse_unsafe_outcome(risk: RiskClass, outcome: ResolutionOutcome) -> str | None:

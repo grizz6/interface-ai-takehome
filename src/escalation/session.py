@@ -15,14 +15,13 @@ from src.escalation import capture
 from src.escalation.intervention import (
     CapturedAction,
     InterventionRequest,
-    ParamDescriptor,
     InterventionResolution,
     InterventionStore,
     load_actions,
     new_intervention_id,
 )
 from src.escalation.lease import ControlLease, ControlLost, InProcessLease, LeaseStore
-from src.models.capability import Capability
+from src.models.capability import Capability, ParamDescriptor, describe_params
 from src.models.common import Holder, LeaseState, RiskClass, StuckReason
 
 DEFAULT_POLL_SECONDS: Final[float] = 0.5
@@ -81,7 +80,7 @@ class EscalationContext:
             risk=risk,
             why=why,
             run_id=run_id,
-            params_redacted=InterventionRequest.describe_params(capability, params),
+            params_redacted=describe_params(capability, params),
         )
 
 

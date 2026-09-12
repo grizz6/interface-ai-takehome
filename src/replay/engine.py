@@ -30,6 +30,7 @@ from src.models.common import (
     FailureClass,
     RecoveryAction,
     RiskClass,
+    Sensitivity,
     StuckReason,
     ValueType,
 )
@@ -59,6 +60,7 @@ from src.surface.actions import (
     TypeAction,
 )
 from src.escalation.session import EscalationContext
+from src.evidence.failure import write_failure_artifacts
 from src.replay.escalate import (
     ResumeAction,
     decide_resume,
@@ -117,7 +119,12 @@ class _Run:
 
 
 def _capture_failure(run: _Run, step_index: int) -> None:
-    """The richer signal section 3.5 asks for, captured at the step that went wrong."""
+    """A screenshot at the moment a step went wrong, for the run timeline.
+
+    The full post mortem is written once, at the end, by `_write_failure_artifacts`. Capturing
+    it here as well would mean a directory with one failure/ per thing that went wrong, and
+    the interesting one is always the state the run actually ended in.
+    """
     if run.sink is None:
         return
     try:
@@ -126,10 +133,6 @@ def _capture_failure(run: _Run, step_index: int) -> None:
         # Evidence capture must never mask the failure it is describing.
         run.note("evidence_capture_failed", step_index=step_index)
         return
-    run.sink.snapshot(f"failure-step-{step_index}-aria", observation.aria_yaml)
-    dom = getattr(run.surface, "dom_snapshot", None)
-    if callable(dom):
-        run.sink.snapshot(f"failure-step-{step_index}-dom", str(dom()))
     if observation.screenshot_png:
         run.sink.screenshot(observation.screenshot_png)
 
@@ -150,6 +153,25 @@ def _capture_outcome(run: _Run) -> None:
         return
     if observation.screenshot_png:
         run.sink.screenshot(observation.screenshot_png)
+
+
+def _pii_bundles(capability: Capability) -> list[Any]:
+    """Every locator whose field receives a value the schema calls pii or secret.
+
+    Read off the declared inputs rather than off the supplied values, the same way
+    params_redacted is, so the set is the same whether or not a value was passed.
+    """
+    sensitive = {
+        spec.name for spec in capability.inputs
+        if spec.sensitivity in (Sensitivity.PII, Sensitivity.SECRET)
+    }
+    return [
+        step.target
+        for step in capability.steps
+        if step.target is not None
+        and step.value is not None
+        and getattr(step.value, "param", None) in sensitive
+    ]
 
 
 def _bind(step: Step, params: dict[str, Any]) -> str | None:
@@ -556,6 +578,9 @@ def replay(
     With a Session passed in, every stopping condition a human could resolve becomes a real
     handoff on this same browser context. Without one, those conditions return NeedsHuman and
     the run ends, which is the same contract with nobody listening.
+
+    Every exit goes through one place, so a run that fails in pre-flight and a run that fails
+    at the last step leave the same shaped directory behind.
     """
     run = _Run(
         capability=capability,
@@ -568,6 +593,21 @@ def replay(
         started=time.monotonic(),
         session=session,
     )
+    result = _execute(run, capability, params, surface, allow_draft)
+    step = next((s for s in capability.steps
+                 if s.index == int(getattr(result, "step_index", -1) or -1)), None)
+    write_failure_artifacts(surface, run.sink, result, step=step,
+                            on_error=lambda: run.note("failure_capture_incomplete"))
+    return result
+
+
+def _execute(
+    run: _Run,
+    capability: Capability,
+    params: dict[str, Any],
+    surface: Any,
+    allow_draft: bool,
+) -> RunResult:
     ref = run.evidence
 
     # 1. pre-flight, before a browser is touched
@@ -579,6 +619,13 @@ def replay(
         return bound
     run.params = bound
     run.note("preflight", capability=capability.capability_id, status=capability.status.value)
+
+    # Screenshots black out any field bound to a pii or secret parameter, for the rest of the
+    # run. Set here rather than earlier so that the checks above genuinely touch nothing: the
+    # first screenshot is taken by the fingerprint check on the next line.
+    masker = getattr(surface, "set_pii_masks", None)
+    if callable(masker):
+        masker(_pii_bundles(capability))
 
     drift = check_fingerprint(capability, surface, ref, run.params)
     if drift is not None:

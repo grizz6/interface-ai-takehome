@@ -16,6 +16,7 @@ playwright-browsers/
 # generated during development, selectively force-added in phase 9
 evidence/*
 !evidence/.gitkeep
+!evidence/README.md
 interventions/*
 !interventions/.gitkeep
 

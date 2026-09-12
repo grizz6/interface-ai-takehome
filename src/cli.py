@@ -22,6 +22,8 @@ from dotenv import load_dotenv
 
 from src.discovery.client import GeminiClient, ModelClient, ModelTurn, ScriptedClient
 from src.discovery.loop import DiscoveryLimits, run_discovery
+from src.evidence.failure import write_failure_artifacts
+from src.evidence.meta import RunMeta
 from src.evidence.writer import EVIDENCE_ROOT, EvidenceWriter, new_run_id
 
 INTERVENTIONS_ROOT = Path("interventions")
@@ -32,7 +34,7 @@ from src.models.results import EXIT_CODES
 from src.policy.gate import PolicyGate
 from src.policy.loading import DEFAULT_POLICY_PATH, PolicyConfigError, load_policy_config
 from src.policy.redaction import Redactor
-from src.models.capability import Capability
+from src.models.capability import Capability, describe_params
 from src.recorder.compile import CompileOutcome, compile_capability
 from src.escalation.operator import serve
 from src.escalation.session import DEFAULT_DEADLINE_SECONDS, Session
@@ -189,7 +191,13 @@ def cmd_discover(args: argparse.Namespace) -> int:
         return EXIT_CODES["failure"]
 
     redactor = Redactor({f"redacted_{i}": v for i, v in enumerate(args.redact)})
-    writer = EvidenceWriter(new_run_id(), redactor, root=Path(args.evidence_dir))
+    run_id = new_run_id()
+    writer = EvidenceWriter(
+        run_id,
+        redactor,
+        root=Path(args.evidence_dir),
+        meta=RunMeta.start(run_id, "discovery", policy_path=args.config, model=args.model),
+    )
     surface = WebSurface(policy, PolicyGate(policy), headless=not args.headed)
 
     try:
@@ -206,11 +214,12 @@ def cmd_discover(args: argparse.Namespace) -> int:
                 writer.screenshot(obs.screenshot_png) if obs.screenshot_png else None
             ),
         )
+        # Written before the surface closes, because a post mortem of a page that is already
+        # gone is three empty files. Same function replay uses, so the directories match.
+        write_failure_artifacts(surface, writer, outcome.result)
     finally:
         surface.close()
 
-    for event in outcome.transcript.events:
-        writer.event(event.kind.value, seq=event.seq, at=event.at, **event.payload)
     writer.write_transcript(outcome.transcript)
     writer.write_result(outcome.result)
 
@@ -236,7 +245,20 @@ def cmd_replay(args: argparse.Namespace) -> int:
     params = json.loads(args.params)
 
     redactor = Redactor({f"redacted_{i}": v for i, v in enumerate(args.redact)})
-    writer = EvidenceWriter(new_run_id(), redactor, root=Path(args.evidence_dir))
+    run_id = new_run_id()
+    writer = EvidenceWriter(
+        run_id,
+        redactor,
+        root=Path(args.evidence_dir),
+        meta=RunMeta.start(
+            run_id,
+            "replay",
+            policy_path=args.config,
+            capability_id=capability.capability_id,
+            capability_version=capability.version,
+            params_redacted=describe_params(capability, params),
+        ),
+    )
     surface = WebSurface(policy, PolicyGate(policy), headless=not args.headed)
     # A lease path is what turns a stopping condition into a handoff. Without one the surface
     # keeps its own in-process lease, so invariant 10 still holds and nothing waits.

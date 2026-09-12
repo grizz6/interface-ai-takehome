@@ -39,8 +39,12 @@ from src.surface.actions import Action, ActionOutcome
 from src.surface.locating import Built, Scope, build, frame_scope
 from src.surface.observation import Observation, parse_aria_snapshot
 from src.escalation.lease import ControlLost, InProcessLease
+from src.evidence.failure import TierProbe
 
 _APPROVAL_RULE = "risky_action_policy:require_approval"
+# Solid black rather than Playwright's default pink, so a masked region reads as removed
+# rather than as a rendering artifact.
+MASK_COLOR = "#000000"
 from src.surface.protocol import (
     ActionTimeout,
     LocatorAmbiguous,
@@ -85,6 +89,9 @@ class WebSurface:
         # in-process lease that automation already holds, so the assertion below is
         # unconditional on every path including every test.
         self._lease: Any = InProcessLease()
+        # Fields holding a pii or secret value, blacked out of every screenshot this surface
+        # takes. Empty until a run declares them.
+        self._mask_bundles: list[Any] = []
         # The application answering with a 500 is a different thing from a checkpoint that
         # did not hold, and only the transport knows which happened. Playwright renders an
         # error page like any other, so without this the two are indistinguishable.
@@ -115,6 +122,56 @@ class WebSurface:
         """HTTP status of the most recent main frame navigation, if there was one."""
         return self._last_status
 
+    def set_pii_masks(self, bundles: list[Any]) -> None:
+        """Bundles whose field holds a pii or secret value, to be blacked out in screenshots.
+
+        Set once per run from the capability's declared inputs. See DECISIONS.md 0037 for why
+        this uses live geometry rather than the recorded geometry_hint.
+        """
+        self._mask_bundles = list(bundles)
+
+    def _mask_locators(self) -> list[Any]:
+        """Build a locator per masked bundle, tolerating the ones that are not on this screen.
+
+        Playwright ignores a mask locator that matches nothing, so a field that belongs to a
+        different step costs nothing here. Built directly rather than resolved, because
+        resolve waits and raises, and neither is wanted while taking a picture.
+        """
+        locators: list[Any] = []
+        for bundle in self._mask_bundles:
+            scope: Scope = frame_scope(self._page, bundle.frame_path)
+            for spec in [bundle.primary, *bundle.fallbacks]:
+                try:
+                    locators.append(build(scope, spec).target)
+                except Exception:  # noqa: BLE001
+                    # A tier that cannot even be built is not worth failing a screenshot over.
+                    continue
+        return locators
+
+    def probe_tiers(self, bundle: LocatorBundle) -> list[TierProbe]:
+        """What each tier matches right now. For post mortems only, never for locating."""
+        scope: Scope = frame_scope(self._page, bundle.frame_path)
+        probes: list[TierProbe] = []
+        for index, spec in enumerate([bundle.primary, *bundle.fallbacks]):
+            try:
+                built = build(scope, spec)
+                guard = built.guard.count() if built.guard is not None else None
+                probes.append(
+                    TierProbe(
+                        tier_index=index,
+                        strategy=spec.strategy,
+                        matched=built.target.count(),
+                        container_matched=guard,
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                probes.append(
+                    TierProbe(
+                        tier_index=index, strategy=spec.strategy, note=type(exc).__name__
+                    )
+                )
+        return probes
+
     def dom_snapshot(self) -> str:
         """Raw HTML, for evidence only. Never for locating anything."""
         return str(self._page.content())
@@ -129,7 +186,9 @@ class WebSurface:
                 title=self._page.title(),
                 aria_yaml=aria,
                 elements=parse_aria_snapshot(aria, frame_names),
-                screenshot_png=self._page.screenshot(type="png"),
+                screenshot_png=self._page.screenshot(
+                    type="png", mask=self._mask_locators(), mask_color=MASK_COLOR
+                ),
                 captured_at=datetime.now(UTC),
             )
         except OSError as exc:
