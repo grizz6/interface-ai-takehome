@@ -1,0 +1,40 @@
+[
+  {
+    "text": "Opening the member lookup screen from the home page.",
+    "tool_calls": [{"id": "c1", "name": "click", "arguments": {"ref": "e19"}}],
+    "stop_reason": "tool_use"
+  },
+  {
+    "text": "Entering the member id the goal supplied.",
+    "tool_calls": [{"id": "c2", "name": "type_text",
+                    "arguments": {"ref": "f1e34", "text": "100001"}}],
+    "stop_reason": "tool_use"
+  },
+  {
+    "text": "Running the search.",
+    "tool_calls": [{"id": "c3", "name": "click", "arguments": {"ref": "f1e38"}}],
+    "stop_reason": "tool_use"
+  },
+  {
+    "text": "The member detail screen is showing. Recording the capability.",
+    "tool_calls": [{
+      "id": "c4",
+      "name": "finish",
+      "arguments": {
+        "capability_name": "lookup-member-savings-balance",
+        "description": "Look up a member by ID and read their current savings balance.",
+        "checkpoint": {"kind": "text_present", "text": "Member Detail - Member ID"},
+        "inputs": [{
+          "name": "member_id", "type": "string", "required": true,
+          "description": "The member record to look up.", "sensitivity": "pii"
+        }],
+        "outputs": [{
+          "name": "savings_balance", "type": "currency",
+          "description": "Current balance of the member's savings account.",
+          "extraction": {"ref": "f3e28", "source": "text", "parse": "currency"}
+        }]
+      }
+    }],
+    "stop_reason": "tool_use"
+  }
+]

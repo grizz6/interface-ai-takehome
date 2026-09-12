@@ -76,6 +76,20 @@ def write_script(tmp_path: Path, base: str) -> Path:
     return path
 
 
+def policy_for(tmp_path: Path, base: str) -> Path:
+    """The shipped policy pins port 8080; the test app gets a random one.
+
+    Without this every navigation in these tests is refused on allowed_hosts, no action is
+    ever recorded, and the tests pass while exercising only the blocked path. Found when a
+    step description assertion had no steps to assert on.
+    """
+    config = json.loads(Path("config/policy.json").read_text())
+    config["allowed_hosts"] = [base.removeprefix("http://")]
+    path = tmp_path / "policy.json"
+    path.write_text(json.dumps(config))
+    return path
+
+
 @pytest.fixture
 def discovered(tmp_path: Path, live_app: str) -> tuple[subprocess.CompletedProcess[str], Path]:
     """One real CLI run, with a secret in the goal, writing into tmp_path."""
@@ -88,6 +102,8 @@ def discovered(tmp_path: Path, live_app: str) -> tuple[subprocess.CompletedProce
         live_app + "/search",
         "--dry-run",
         str(write_script(tmp_path, live_app)),
+        "--config",
+        str(policy_for(tmp_path, live_app)),
         "--evidence-dir",
         str(evidence),
         "--redact",
@@ -199,3 +215,38 @@ def test_goal_and_target_are_required() -> None:
         f"  observed exit: {result.returncode}\n  stderr:\n{result.stderr}"
     )
     assert "--goal" in result.stderr
+
+
+def test_every_screenshot_on_disk_appears_in_the_result(
+    discovered: tuple[subprocess.CompletedProcess[str], Path],
+) -> None:
+    """Section 3.5 wants a richer signal on failure. A caller has to be able to find it.
+
+    The evidence reference used to be captured before the run started, so it listed no
+    screenshots at all while several sat on disk beside it.
+    """
+    _, directory = discovered
+    on_disk = sorted(str(p) for p in (directory / "screenshots").glob("*.png"))
+    assert on_disk, "the run should have written at least one screenshot"
+
+    result = json.loads((directory / "result.json").read_text())
+    listed = sorted(result["evidence"]["screenshot_paths"])
+    assert listed == on_disk, (
+        f"result.json lists {len(listed)} screenshots but {len(on_disk)} are on disk"
+    )
+
+
+def test_a_redacted_value_never_appears_in_a_step_description(
+    discovered: tuple[subprocess.CompletedProcess[str], Path],
+) -> None:
+    """StepTrace.description is built before redaction, so it must never carry a value."""
+    _, directory = discovered
+    result = json.loads((directory / "result.json").read_text())
+    descriptions = [s["description"] for s in result.get("steps", [])]
+    assert descriptions, (
+        "the run should have recorded at least one step; result was:\n"
+        + json.dumps(result, indent=2)[:900]
+    )
+    for description in descriptions:
+        assert SECRET not in description, f"a redacted value reached: {description!r}"
+

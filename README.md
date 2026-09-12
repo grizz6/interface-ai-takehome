@@ -119,32 +119,53 @@ Useful flags:
 
 ### Running the whole pipeline without a model
 
-`--dry-run` takes a JSON list of model turns and feeds them through the same code path a real
-model uses, so the loop, the policy gate, the locator machinery and the evidence writer all run
-with no key and no network:
+`--dry-run` replays a scripted list of model turns through the same code path a real model
+uses. The browser, the policy gate, the locator machinery and the evidence writer all run for
+real; only the model is replaced. Two scripts ship in `evidence-inputs/`.
 
-```json
-[
-  {
-    "text": "Opening the member record.",
-    "tool_calls": [
-      {"id": "c1", "name": "navigate",
-       "arguments": {"url": "http://localhost:8080/member/100001"}}
-    ],
-    "stop_reason": "tool_use"
-  }
-]
-```
+**The happy path**, which reaches a verified finish and exits 0:
 
 ```bash
 .venv/bin/python -m src.cli discover \
-  --goal "look up member 100001" \
-  --target http://localhost:8080/member/100001 \
-  --dry-run script.json
+  --goal "look up member 100001 and read their current savings balance" \
+  --target http://localhost:8080 \
+  --config config/policy.json \
+  --dry-run evidence-inputs/happy-path.json
 ```
 
-This is how the test suite exercises the system end to end, and it is the fastest way to see
-the pieces work without spending a request.
+It navigates, clicks Member Lookup, types the member id, searches, and then calls `finish`.
+The checkpoint is evaluated against the live page and the declared output is actually
+extracted from it before success is accepted, so exit 0 here means the whole vertical slice
+worked, not merely that the script ran to the end:
+
+```json
+{
+  "kind": "success",
+  "outputs": { "savings_balance": "4182.55" },
+  "steps": [
+    { "action": "navigate", "locator_strategy_used": null },
+    { "action": "click", "description": "click 'Member Lookup'", "locator_strategy_used": "role_name" },
+    { "action": "type",  "description": "type into 'Member ID'", "locator_strategy_used": "role_name" },
+    { "action": "click", "description": "click 'Search'",        "locator_strategy_used": "role_name" }
+  ]
+}
+```
+
+**The failure path**, which exits 20:
+
+```bash
+.venv/bin/python -m src.cli discover \
+  --goal "open the fault console" \
+  --target http://localhost:8080 \
+  --config config/policy.json \
+  --dry-run evidence-inputs/failure-path.json
+```
+
+It tries a route the policy forbids, gets refused, is told the direction is closed rather
+than crashing, and then stops when three consecutive observations come back identical. That
+is the guardrail and the stall detector both doing their job.
+
+This is the fastest way to see the system work, and it needs no API key.
 
 ### 2. Replay: pending
 

@@ -108,7 +108,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
             goal=args.goal,
             surface=surface,
             client=_client(args),
-            evidence=writer.ref,
+            evidence=lambda: writer.ref,
             model="scripted" if args.dry_run else args.model,
             surface_descriptor=_descriptor(args.target),
             target=args.target,

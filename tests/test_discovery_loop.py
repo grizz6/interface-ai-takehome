@@ -386,3 +386,36 @@ def test_a_refused_navigation_against_the_real_gate_is_fed_back_not_raised(
     assert "refused by policy" in refusal.content
     assert "denied_path_patterns" in refusal.content
     assert "^/dev" not in refusal.content
+
+
+def test_a_typed_value_never_reaches_a_step_description() -> None:
+    """B7 at the unit level: the description names the control, never the value.
+
+    Redaction would catch a value the caller thought to pass to --redact. It cannot catch a
+    member id nobody declared, so the value must not be in the string at all.
+    """
+    typed_value = "MEMBER-99999-PRIVATE"
+    finish = {
+        **FINISH_ARGS,
+        "outputs": [],
+    }
+    client = ScriptedClient(
+        [
+            turn(call("type_text", ref="e6", text=typed_value)),
+            turn(call("finish", **finish)),
+        ]
+    )
+    outcome = drive(
+        client,
+        FakeSurface(snapshots=[SNAPSHOT, SNAPSHOT + '  - cell "x"\n']),
+    )
+
+    assert isinstance(outcome.result, SuccessResult)
+    descriptions = [s.description for s in outcome.result.steps]
+    assert descriptions, "the run should have recorded a step"
+    for description in descriptions:
+        assert typed_value not in description, description
+    # the value is still recorded where the schema knows it is sensitive
+    typed = [a for a in outcome.transcript.actions if a.action_kind == "type"]
+    assert typed and typed[0].literal_value == typed_value
+

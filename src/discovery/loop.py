@@ -17,6 +17,7 @@ executes that claim against the live page before any SuccessResult is returned.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -114,6 +115,26 @@ class _Stop(Exception):
         self.reason = reason
 
 
+def _describe_action(kind: ActionType, bundle: Any) -> str:
+    """A human readable description that never contains the value that was typed.
+
+    The value is exactly the thing most likely to be a member id or an account number, and
+    this string travels into StepTrace and out into result.json. Redaction would catch a
+    value the caller thought to pass to --redact; it cannot catch one nobody declared. So the
+    description names the control instead, and the value lives only in ActionRecord where the
+    schema knows it is sensitive.
+    """
+    control = getattr(bundle, "recorded_accessible_name", None) if bundle else None
+    target = f" into {control!r}" if control else ""
+    if kind is ActionType.TYPE:
+        return f"type{target or ' a value'}"
+    if kind is ActionType.SELECT:
+        return f"select an option{target}"
+    if kind is ActionType.CLICK:
+        return f"click{f' {control!r}' if control else ''}"
+    return kind.value
+
+
 class DiscoveryRun:
     """One discovery run against one surface."""
 
@@ -123,7 +144,7 @@ class DiscoveryRun:
         goal: str,
         surface: Any,
         client: ModelClient,
-        evidence: EvidenceRef,
+        evidence: EvidenceRef | Callable[[], EvidenceRef],
         model: str,
         surface_descriptor: SurfaceDescriptor,
         target: str | None = None,
@@ -138,11 +159,16 @@ class DiscoveryRun:
         self.goal = goal
         self.surface = surface
         self.client = client
-        self.evidence = evidence
+        # Accepts a callable so the reference is resolved when a result is built rather
+        # than when the run starts. Screenshots are written as the run goes, so a reference
+        # captured up front lists none of them, and a caller reading result.json cannot find
+        # the richer signal section 3.5 asks for.
+        self._evidence_source = evidence
         self.limits = limits or DiscoveryLimits()
         self.tools = tools if tools is not None else discovery_tools()
+        self._run_id = (evidence() if callable(evidence) else evidence).run_id
         self.transcript = DiscoveryTranscript(
-            run_id=evidence.run_id,
+            run_id=self._run_id,
             goal=goal,
             model=model,
             surface=surface_descriptor,
@@ -159,6 +185,12 @@ class DiscoveryRun:
         self._started = 0.0
         self._observation: Any = None
         self._last_block: tuple[str, ActionType] | None = None
+
+    @property
+    def evidence(self) -> EvidenceRef:
+        """Resolved fresh each time, so screenshots written since the run began are listed."""
+        source = self._evidence_source
+        return source() if callable(source) else source
 
     # -- bookkeeping ---------------------------------------------------------
     def _next_seq(self) -> int:
@@ -239,7 +271,7 @@ class DiscoveryRun:
             return DiscoveryOutcome(result=stop.result, transcript=self.transcript)
 
         result: RunResult = NeedsHumanResult(
-            intervention_id=f"{self.evidence.run_id}-max-steps",
+            intervention_id=f"{self._run_id}-max-steps",
             reason=StuckReason.MAX_STEPS_EXCEEDED,
             step_index=len(self.transcript.actions),
             steps=self._traces(),
@@ -299,7 +331,7 @@ class DiscoveryRun:
             return
         raise _Stop(
             NeedsHumanResult(
-                intervention_id=f"{self.evidence.run_id}-timeout",
+                intervention_id=f"{self._run_id}-timeout",
                 reason=StuckReason.STEP_TIMEOUT,
                 step_index=len(self.transcript.actions),
                 steps=self._traces(),
@@ -325,7 +357,7 @@ class DiscoveryRun:
         if self._identical_observations >= self.limits.max_identical_observations:
             raise _Stop(
                 NeedsHumanResult(
-                    intervention_id=f"{self.evidence.run_id}-stalled",
+                    intervention_id=f"{self._run_id}-stalled",
                     reason=StuckReason.UNKNOWN_STATE,
                     step_index=len(self.transcript.actions),
                     steps=self._traces(),
@@ -361,7 +393,7 @@ class DiscoveryRun:
             self._event(EventKind.STOP, tool="give_up", reason=reason)
             raise _Stop(
                 NeedsHumanResult(
-                    intervention_id=f"{self.evidence.run_id}-gave-up",
+                    intervention_id=f"{self._run_id}-gave-up",
                     reason=StuckReason.UNKNOWN_STATE,
                     step_index=len(self.transcript.actions),
                     steps=self._traces(),
@@ -460,7 +492,7 @@ class DiscoveryRun:
                 literal_value=literal,
                 tier_resolved=outcome.resolved_strategy,
                 outcome_ok=outcome.ok,
-                note=f"{kind.value} {literal or ''}".strip(),
+                note=_describe_action(kind, bundle),
                 obs_hash_before=self._last_hash,
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
@@ -514,7 +546,7 @@ class DiscoveryRun:
         self._event(EventKind.VERIFICATION, escalated=reason.value, detail=detail)
         return _Stop(
             NeedsHumanResult(
-                intervention_id=f"{self.evidence.run_id}-{reason.value}",
+                intervention_id=f"{self._run_id}-{reason.value}",
                 reason=reason,
                 step_index=len(self.transcript.actions),
                 steps=self._traces(),
@@ -584,7 +616,7 @@ def run_discovery(
     goal: str,
     surface: Any,
     client: ModelClient,
-    evidence: EvidenceRef,
+    evidence: EvidenceRef | Callable[[], EvidenceRef],
     model: str,
     surface_descriptor: SurfaceDescriptor,
     target: str | None = None,
