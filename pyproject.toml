@@ -19,7 +19,7 @@ dev = [
 
 [tool.mypy]
 python_version = "3.11"
-files = ["src/models", "src/replay", "src/surface", "src/policy", "src/discovery", "src/evidence", "src/cli.py"]
+files = ["src/models", "src/replay", "src/surface", "src/policy", "src/discovery", "src/evidence", "src/recorder", "src/cli.py"]
 strict = true
 
 [[tool.mypy.overrides]]

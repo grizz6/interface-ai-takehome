@@ -25,10 +25,12 @@ from src.discovery.loop import DiscoveryLimits, run_discovery
 from src.evidence.writer import EVIDENCE_ROOT, EvidenceWriter, new_run_id
 from src.models.capability import SurfaceDescriptor, SurfaceFingerprint
 from src.models.common import SurfaceKind
+from src.discovery.transcript import DiscoveryTranscript
 from src.models.results import EXIT_CODES
 from src.policy.gate import PolicyGate
 from src.policy.loading import DEFAULT_POLICY_PATH, PolicyConfigError, load_policy_config
 from src.policy.redaction import Redactor
+from src.recorder.compile import CompileOutcome, compile_capability
 from src.surface.web import WebSurface
 
 # gemini-3-flash-preview caps the free tier at 20 requests, which a 25 step run
@@ -65,13 +67,53 @@ def build_parser() -> argparse.ArgumentParser:
         help="Where run directories are written. Tests pass a temporary path.",
     )
     discover.add_argument(
+        "--record",
+        action="store_true",
+        help="On success, compile the transcript into a capability and save it.",
+    )
+    discover.add_argument(
         "--redact",
         action="append",
         default=[],
         metavar="VALUE",
         help="A value that must never appear in evidence. Repeatable.",
     )
+    record = sub.add_parser(
+        "record", help="Compile a discovery transcript into a capability artifact."
+    )
+    record.add_argument("--transcript", required=True, help="Path to a transcript.json.")
+    record.add_argument("--out", default="capabilities", help="Directory to write into.")
+    record.add_argument("--policy", default=str(DEFAULT_POLICY_PATH))
     return parser
+
+
+def _save_capability(outcome: CompileOutcome, out_dir: Path) -> int:
+    """Print the compile report, write the artifact, return the exit code."""
+    for line in outcome.report.lines():
+        print(f"  {line}")
+    if outcome.error is not None or outcome.capability is None:
+        print(f"compile failed: {outcome.error}", file=sys.stderr)
+        return EXIT_CODES["failure"]
+
+    capability = outcome.capability
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{capability.capability_id}-{capability.version}.json"
+    path.write_text(capability.model_dump_json(indent=2) + "\n")
+    print(path)
+    return EXIT_CODES["success"]
+
+
+def cmd_record(args: argparse.Namespace) -> int:
+    try:
+        policy = load_policy_config(args.policy)
+    except PolicyConfigError as exc:
+        print(f"policy: {exc}", file=sys.stderr)
+        return EXIT_CODES["failure"]
+
+    transcript = DiscoveryTranscript.model_validate_json(
+        Path(args.transcript).read_text()
+    )
+    return _save_capability(compile_capability(transcript, policy), Path(args.out))
 
 
 def _descriptor(target: str) -> SurfaceDescriptor:
@@ -126,6 +168,13 @@ def cmd_discover(args: argparse.Namespace) -> int:
     writer.write_result(outcome.result)
 
     print(writer.directory)
+
+    if args.record and outcome.result.kind == "success":
+        # Compiling is a separate concern from running, so a compile failure is reported and
+        # does not rewrite the run's own result: the discovery run did succeed.
+        print("compiling the transcript into a capability:")
+        _save_capability(compile_capability(outcome.transcript, policy), Path("capabilities"))
+
     return EXIT_CODES[outcome.result.kind]
 
 
@@ -135,6 +184,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "discover":
         return cmd_discover(args)
+    if args.command == "record":
+        return cmd_record(args)
     return EXIT_CODES["failure"]
 
 

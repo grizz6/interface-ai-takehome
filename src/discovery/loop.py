@@ -326,6 +326,21 @@ class DiscoveryRun:
                     EventKind.TOOL_RESULT, tool=call.name, ok=not is_error, detail=content
                 )
 
+    def _backfill_hash_after(self, digest: str) -> None:
+        """Close out the previous action with the screen state that followed it.
+
+        An action cannot know what the page looks like afterwards until the next observation,
+        so the hash is written back here. Without it obs_hash_after is always None, and the
+        recorder's rule for dropping an action that changed nothing is dead code that never
+        fires. ActionRecord is frozen, so the record is replaced rather than mutated.
+        """
+        if not self.transcript.actions:
+            return
+        last = self.transcript.actions[-1]
+        if last.obs_hash_after is not None:
+            return
+        self.transcript.actions[-1] = last.model_copy(update={"obs_hash_after": digest})
+
     def _check_clock(self) -> None:
         if time.monotonic() - self._started <= self.limits.wall_clock_s:
             return
@@ -346,6 +361,7 @@ class DiscoveryRun:
         if self._on_observation is not None:
             self._on_observation(observation)
         digest = hash_observation(observation.aria_yaml)
+        self._backfill_hash_after(digest)
         self._event(EventKind.OBSERVATION, url=observation.url, hash=digest)
 
         if digest == self._last_hash:

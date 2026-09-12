@@ -721,3 +721,112 @@ whose values came from parameters marked pii, which the Observation already carr
 geometry for. The third is genuinely feasible here and is the interesting one, because
 `ObservedElement.box` exists precisely because bounding boxes were recorded. It is phase 8 work
 and is noted there rather than done here.
+
+## 0019. The recorder carries locator bundles through unchanged
+
+Phase 5.
+
+`compile` copies `ActionRecord.bundle` into the compiled `Step` verbatim. It does not re-rank
+the tiers, does not re-run `describe`, and does not try to improve anything.
+
+The reason is that a bundle is a claim about one page at one instant, and it was verified at
+that instant: `describe` checked every candidate tier against the live page before the bundle
+existed at all. By the time the recorder runs, that page is gone. Re-deriving would mean
+deriving against whatever the browser happens to be showing now, or worse against no page at
+all, and the result would be a locator that has never been checked against anything. The one
+moment a locator can be known to be true is the moment it is built, which is why invariant 9
+puts the conversion at the action rather than at the recording.
+
+Rejected: re-derive at compile time so the bundle reflects the final state of the page, which
+would let a later step's locator benefit from the page having settled. It was rejected because
+it inverts the guarantee. A bundle built during the action is one that resolved uniquely then;
+a bundle built afterwards is a guess dressed as a recording, and nothing downstream could tell
+the two apart.
+
+Known weakness: the bundle is only as good as the moment it was captured, and the recorder has
+no way to notice a bad one. If `describe` picked a locator that happened to be unique on that
+render but is not stable, for instance the balance cell in the real recorded run, whose
+`role_name` primary is the balance figure itself, the recorder copies that mistake through
+faithfully. Nothing here inspects a bundle for whether it names something that will still be
+true next month. That is a real gap and the sharpest one in this phase.
+
+## 0020. An unmatched declared input is a compile error, not a warning
+
+Phase 5.
+
+If a declared input cannot be matched to any recorded literal, compilation fails with
+`INPUT_MATCHES_NO_LITERAL` rather than emitting a warning and continuing.
+
+An input is a promise to the caller: supply this and it will be used. An input the flow never
+consumes is a false promise, and a caller passing a member id to a capability that ignores it
+gets a confident result computed from whatever was baked in at record time. That is worse than
+an error, because it looks like success.
+
+The schema would catch it anyway. Cross field validator 7 rejects a required input that no
+step references, so the artifact could never be constructed regardless. Failing here rather
+than there is purely about the message: the validator can say only that an input is
+unreferenced, while the compiler knows why and can say that no recorded step used a value at
+all, or that two inputs could not be told apart.
+
+Rejected: warn and drop the unmatched input, producing a valid capability with one fewer
+parameter. Tempting because it always yields an artifact. Rejected because it silently changes
+the contract the model declared, and the person reading the capability later would have no way
+to know an input had been removed on their behalf.
+
+Known weakness: the matching itself is inference, not fact. The model types a value and never
+says which parameter it came from, so the recorder reconstructs the mapping from the example
+field first and the goal text second. Where that leaves a real choice it refuses, which means
+a legitimate two parameter flow whose values do not appear in the goal will fail to compile
+until someone adds examples. That is the right way round, but it is a cost.
+
+## 0021. known_outcomes is left empty rather than populated with plausible defaults
+
+Phase 5.
+
+The compiled capability declares no business outcomes at all, and the compile report says so.
+
+The target application has three real ones: no member found, permission denied, and validation
+rejected. It would be easy, and would look thorough, to add them to every capability compiled
+against this app. It would also be fabrication. The run being compiled never encountered any
+of them, so nothing in the transcript is evidence that the detection signal for any of them is
+correct. A declared outcome carries a Signal that replay will evaluate on every future run, and
+a signal nobody has ever seen match is the same kind of guess as a checkpoint that has never
+held, which DECISIONS 0013 refuses for exactly this reason.
+
+design rules section 10 also says evidence is produced by real runs and never generated. An
+outcome declaration is a claim about what the application does; inventing one is generating
+evidence with extra steps.
+
+Rejected: seed the outcomes from the target app's known failure screens, since we wrote the app
+and know them. Rejected because it does not generalize past the one application we happen to
+have written. The real environment is a vendor product nobody here has the source of, and a
+recorder that only works when you already know every error screen is not a recorder.
+
+What it costs, stated plainly: a capability compiled from one happy path will treat a
+"no such member" screen as a checkpoint failure rather than as the business outcome it is.
+That is the exact confusion invariant 5 exists to prevent, and this phase ships with it
+present. The fix is more recordings, one per outcome, merged into the artifact, or a human
+adding the declarations by hand. Both are phase 9 or later.
+
+## 0022. status is always draft on first compile
+
+Phase 5.
+
+Every compiled capability comes out `draft`, and there is no argument that changes it.
+
+A capability that has been compiled has run exactly once, forwards, with the model in the loop
+making every decision. Nothing about that establishes it replays: the whole point of the
+artifact is that replay is a different execution path, with no model, resolving locators from
+recorded bundles rather than from a live snapshot. The first thing that could justify
+`approved` is a successful replay, and phase 6 has not happened.
+
+Rejected: mark it approved when the discovery run verified its own checkpoint and outputs,
+since that verification did happen against the live page. It is a real signal and it is why
+the artifact is worth having. It is not the same signal: verification proves the finish payload
+described the page the model was standing on, not that a locator recorded mid-run resolves on
+a fresh load, which is the thing that actually breaks.
+
+Known weakness: nothing in this repo yet moves a capability from draft to approved, so the
+field is currently write-once and decorative. It becomes load bearing the moment unattended
+replay exists and has to refuse anything not approved, which is the confidence and approval
+stretch goal.
