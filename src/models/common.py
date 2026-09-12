@@ -110,6 +110,33 @@ class StuckReason(StrEnum):
     MAX_STEPS_EXCEEDED = "max_steps_exceeded"
 
 
+class Holder(StrEnum):
+    """Who is driving the browser right now."""
+
+    AUTOMATION = "automation"
+    HUMAN = "human"
+    NONE = "none"
+
+
+class LeaseState(StrEnum):
+    """Where a session is in the handoff protocol. See src/escalation/lease.py."""
+
+    RUNNING = "running"
+    PAUSED = "paused"
+    HUMAN_CONTROL = "human_control"
+    RESUMING = "resuming"
+    CLOSED = "closed"
+
+
+class ResolutionOutcome(StrEnum):
+    """What the operator did, which decides what automation does with the step."""
+
+    APPROVED = "approved"
+    COMPLETED_MANUALLY = "completed_manually"
+    RETRY_STEP = "retry_step"
+    ABORTED = "aborted"
+
+
 class FailureClass(StrEnum):
     LOCATOR_UNRESOLVED = "locator_unresolved"
     CHECKPOINT_FAILED = "checkpoint_failed"

@@ -44,7 +44,14 @@ from src.discovery.transcript import (
 )
 from src.discovery.verify import Verification, verify_finish
 from src.models.capability import SurfaceDescriptor
-from src.models.common import ActionType, FailureClass, StuckReason
+from src.escalation.session import EscalationContext
+from src.models.common import (
+    ActionType,
+    FailureClass,
+    ResolutionOutcome,
+    RiskClass,
+    StuckReason,
+)
 from src.models.results import (
     BusinessOutcomeResult,
     EvidenceRef,
@@ -151,7 +158,12 @@ class DiscoveryRun:
         limits: DiscoveryLimits | None = None,
         tools: list[ToolSpec] | None = None,
         on_observation: Any | None = None,
+        session: Any = None,
     ) -> None:
+        # Optional, exactly as in replay. Without one, a stall or a give_up ends the run with
+        # NeedsHuman and nobody is asked. With one, the same two conditions hand the live
+        # session to a person who can look at the screen the model could not read.
+        self.session = session
         # A callback rather than an EvidenceWriter, so the loop stays unaware of what
         # evidence is and the dependency points one way only.
         self._on_observation = on_observation
@@ -371,16 +383,15 @@ class DiscoveryRun:
         self._last_hash = digest
 
         if self._identical_observations >= self.limits.max_identical_observations:
-            raise _Stop(
-                NeedsHumanResult(
-                    intervention_id=f"{self._run_id}-stalled",
-                    reason=StuckReason.UNKNOWN_STATE,
-                    step_index=len(self.transcript.actions),
-                    steps=self._traces(),
-                    evidence=self.evidence,
-                ),
-                DiscoveryStop.NEEDS_HUMAN,
+            self._ask_for_help(
+                f"the screen has not changed across "
+                f"{self._identical_observations} observations, so the model is repeating "
+                "itself without making progress"
             )
+            # Cleared so the loop gets a fresh budget rather than stalling again on the next
+            # observation. If a human unblocked the screen, the next digest differs anyway.
+            self._identical_observations = 0
+            return observation
         if self._identical_observations >= self.limits.max_identical_observations - 1:
             # One away from calling it a stall. Give the model a picture before it is too late.
             self._want_screenshot = True
@@ -407,15 +418,11 @@ class DiscoveryRun:
         if name == ToolName.GIVE_UP:
             reason = str(args.get("reason") or "no reason given")
             self._event(EventKind.STOP, tool="give_up", reason=reason)
-            raise _Stop(
-                NeedsHumanResult(
-                    intervention_id=f"{self._run_id}-gave-up",
-                    reason=StuckReason.UNKNOWN_STATE,
-                    step_index=len(self.transcript.actions),
-                    steps=self._traces(),
-                    evidence=self.evidence,
-                ),
-                DiscoveryStop.GAVE_UP,
+            self._ask_for_help(f"the model gave up: {reason}", stop=DiscoveryStop.GAVE_UP)
+            return (
+                "A human looked at the session and handed it back. Look again before "
+                "deciding anything: the screen may have changed.",
+                False,
             )
 
         if name == ToolName.FINISH:
@@ -556,6 +563,56 @@ class DiscoveryRun:
             "closed: take a different route, or call give_up.",
             True,
         )
+
+    def _ask_for_help(
+        self, why: str, *, stop: DiscoveryStop = DiscoveryStop.NEEDS_HUMAN
+    ) -> None:
+        """Hand the session to a human and wait. Raises _Stop if nobody resolves it.
+
+        Discovery has no step to skip and no postcondition to verify, so the resume semantics
+        collapse to two cases: aborted ends the run, and anything else means a person has
+        been in the session and the model should look again. The loop re-observes on the next
+        turn regardless, which is what makes "look again" true rather than a hope.
+        """
+        if self.session is None:
+            raise _Stop(
+                NeedsHumanResult(
+                    intervention_id=f"{self._run_id}-{stop.value}",
+                    reason=StuckReason.UNKNOWN_STATE,
+                    step_index=len(self.transcript.actions),
+                    steps=self._traces(),
+                    evidence=self.evidence,
+                ),
+                stop,
+            )
+
+        context = EscalationContext(
+            capability_id=self.transcript.surface.app_id,
+            capability_version="unrecorded",
+            goal_text=self.goal,
+            step_index=len(self.transcript.actions),
+            step_description="discovery is still exploring; no step has been recorded here",
+            risk=RiskClass.SAFE_REVERSIBLE,
+            why=why,
+            run_id=self._run_id,
+        )
+        intervention_id = self.session.escalate(StuckReason.UNKNOWN_STATE, context)
+        self._event(EventKind.VERIFICATION, escalated="unknown_state", detail=why)
+
+        resolution = self.session.await_return(intervention_id)
+        if resolution is None or resolution.outcome is ResolutionOutcome.ABORTED:
+            raise _Stop(
+                NeedsHumanResult(
+                    intervention_id=intervention_id,
+                    reason=StuckReason.UNKNOWN_STATE,
+                    step_index=len(self.transcript.actions),
+                    steps=self._traces(),
+                    evidence=self.evidence,
+                ),
+                stop,
+            )
+        self.session.resume()
+        self._want_screenshot = True
 
     def _escalate(self, reason: StuckReason, detail: str) -> _Stop:
         """Invariant 4: ambiguity stops the run. It never guesses and never retries."""

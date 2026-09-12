@@ -23,6 +23,8 @@ from dotenv import load_dotenv
 from src.discovery.client import GeminiClient, ModelClient, ModelTurn, ScriptedClient
 from src.discovery.loop import DiscoveryLimits, run_discovery
 from src.evidence.writer import EVIDENCE_ROOT, EvidenceWriter, new_run_id
+
+INTERVENTIONS_ROOT = Path("interventions")
 from src.models.capability import SurfaceDescriptor, SurfaceFingerprint
 from src.models.common import SurfaceKind
 from src.discovery.transcript import DiscoveryTranscript
@@ -32,6 +34,8 @@ from src.policy.loading import DEFAULT_POLICY_PATH, PolicyConfigError, load_poli
 from src.policy.redaction import Redactor
 from src.models.capability import Capability
 from src.recorder.compile import CompileOutcome, compile_capability
+from src.escalation.operator import serve
+from src.escalation.session import DEFAULT_DEADLINE_SECONDS, Session
 from src.replay.engine import replay
 from src.surface.web import WebSurface
 
@@ -99,6 +103,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Replay a capability that is still draft. For development only.",
     )
     play.add_argument("--redact", action="append", default=[], metavar="VALUE")
+    play.add_argument(
+        "--interventions-dir",
+        default=str(INTERVENTIONS_ROOT),
+        metavar="DIR",
+        help="Where handoff requests are written for the operator console.",
+    )
+    play.add_argument(
+        "--lease-path",
+        default=None,
+        metavar="FILE",
+        help=(
+            "Share a control lease file with an operator console. Without this the run holds "
+            "an in-process lease and every stopping condition ends the run instead of "
+            "waiting for a person."
+        ),
+    )
+    play.add_argument(
+        "--intervention-timeout",
+        type=int,
+        default=DEFAULT_DEADLINE_SECONDS,
+        metavar="SECONDS",
+        help="How long a handoff waits before the run gives up on an answer.",
+    )
+
+    console = sub.add_parser("operator", help="Serve the minimal operator console.")
+    console.add_argument("--port", type=int, default=8090)
+    console.add_argument("--interventions-dir", default=str(INTERVENTIONS_ROOT), metavar="DIR")
+    console.add_argument("--lease-path", default=None, metavar="FILE")
     return parser
 
 
@@ -206,6 +238,19 @@ def cmd_replay(args: argparse.Namespace) -> int:
     redactor = Redactor({f"redacted_{i}": v for i, v in enumerate(args.redact)})
     writer = EvidenceWriter(new_run_id(), redactor, root=Path(args.evidence_dir))
     surface = WebSurface(policy, PolicyGate(policy), headless=not args.headed)
+    # A lease path is what turns a stopping condition into a handoff. Without one the surface
+    # keeps its own in-process lease, so invariant 10 still holds and nothing waits.
+    session = Session(
+        surface,
+        session_id=writer.run_id,
+        lease_path=args.lease_path,
+        interventions_dir=args.interventions_dir,
+        evidence_sink=writer,
+        deadline_seconds=args.intervention_timeout,
+        redactor=redactor,
+    )
+    if args.lease_path:
+        print(f"escalations will appear in {args.interventions_dir}, lease at {args.lease_path}")
     try:
         result = replay(
             capability,
@@ -215,6 +260,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
             evidence=lambda: writer.ref,
             sink=writer,
             allow_draft=args.allow_draft,
+            session=session if args.lease_path else None,
         )
     finally:
         surface.close()
@@ -222,6 +268,16 @@ def cmd_replay(args: argparse.Namespace) -> int:
     writer.write_result(result)
     print(writer.directory)
     return EXIT_CODES[result.kind]
+
+
+def cmd_operator(args: argparse.Namespace) -> int:
+    """Serve the console. Blocks until interrupted; there is no result to return."""
+    lease_path = args.lease_path or str(Path(args.interventions_dir) / "lease.json")
+    print(f"operator console on http://127.0.0.1:{args.port}")
+    print(f"  interventions: {args.interventions_dir}")
+    print(f"  lease:         {lease_path}")
+    serve(args.port, args.interventions_dir, lease_path)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -234,6 +290,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_record(args)
     if args.command == "replay":
         return cmd_replay(args)
+    if args.command == "operator":
+        return cmd_operator(args)
     return EXIT_CODES["failure"]
 
 

@@ -360,7 +360,10 @@ def policy_config() -> PolicyConfig:
             ActionType.SELECT,
             ActionType.WAIT_FOR,
         ],
-        risky_action_policy="flag",
+        # Matches config/policy.json, which is what actually ships. A fixture that only
+        # flagged made the surface's gate disagree with the engine's, and an approval test
+        # passed because of the disagreement rather than because approval worked.
+        risky_action_policy="require_approval",
         risky_control_names=["Confirm"],
     )
 

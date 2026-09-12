@@ -58,6 +58,13 @@ from src.surface.actions import (
     SelectAction,
     TypeAction,
 )
+from src.escalation.session import EscalationContext
+from src.replay.escalate import (
+    ResumeAction,
+    decide_resume,
+    needs_human_on_expiry,
+    verify_after_return,
+)
 from src.surface.extraction import extract_value
 from src.surface.protocol import (
     ActionTimeout,
@@ -94,6 +101,10 @@ class _Run:
     traces: list[StepTrace] = field(default_factory=list)
     recoveries: list[str] = field(default_factory=list)
     started: float = 0.0
+    session: Any = None
+    # Steps a human has explicitly approved. Approval waives the approval rule for one step
+    # and nothing else: the allowlist, the denied paths and the action list still apply.
+    approved_steps: set[int] = field(default_factory=set)
 
     @property
     def evidence(self) -> EvidenceRef:
@@ -195,21 +206,33 @@ def _matching_outcome(
     return None
 
 
-def _apply_recoveries(run: _Run, index: int) -> None:
+def _apply_recoveries(run: _Run, index: int) -> str | None:
     """Fire any recovery whose detect signal matches, bounded by max_attempts.
 
     A recovery that fires is metadata on whatever result follows. It never becomes a result
     kind of its own, per design rules section 7.
+
+    Returns the name of a rule whose condition is STILL present after its attempts are spent.
+    That is the recovery_exhausted case: the interruption is real, it was recognised, and the
+    declared remedy did not clear it. Continuing from there means judging the flow against
+    whatever is covering it, so the caller escalates instead.
     """
     for rule in run.capability.recoveries:
         if rule.applies_to_steps is not None and index not in rule.applies_to_steps:
             continue
+        fired = False
         for _attempt in range(rule.max_attempts):
             if not run.surface.evaluate(rule.detect):
                 break
             _perform_recovery(run, rule)
             run.recoveries.append(rule.name)
             run.note("recovery", rule=rule.name, step_index=index)
+            fired = True
+        else:
+            if fired and run.surface.evaluate(rule.detect):
+                run.note("recovery_exhausted", rule=rule.name, step_index=index)
+                return rule.name
+    return None
 
 
 def _perform_recovery(run: _Run, rule: RecoveryRule) -> None:
@@ -232,31 +255,135 @@ def _coerce_output(spec: OutputSpec, raw: str) -> Any:
         return raw if spec.type is ValueType.STRING else None
 
 
+def _escalate(
+    run: _Run, step: Step, escalation: _Escalation
+) -> ResumeAction | RunResult:
+    """Hand the session to a human, wait, then decide what to do with what comes back.
+
+    With no session wired up there is nobody to escalate to, so this degrades to the honest
+    answer: a NeedsHumanResult naming the reason, exactly as phase 6 returned.
+    """
+    if run.session is None:
+        return NeedsHumanResult(
+            intervention_id=f"{run.evidence.run_id}-{escalation.reason.value}-{step.index}",
+            reason=escalation.reason,
+            step_index=step.index,
+            steps=run.traces,
+            evidence=run.evidence,
+        )
+
+    context = EscalationContext.from_capability(
+        run.capability,
+        run.params,
+        step_index=step.index,
+        step_description=step.description,
+        risk=step.risk,
+        why=escalation.why,
+        run_id=run.evidence.run_id,
+    )
+    intervention_id = run.session.escalate(escalation.reason, context)
+    run.note("escalated", step_index=step.index, reason=escalation.reason.value,
+             intervention_id=intervention_id)
+
+    resolution = run.session.await_return(intervention_id)
+    if resolution is None:
+        run.note("escalation_expired", intervention_id=intervention_id)
+        return needs_human_on_expiry(
+            intervention_id, step, escalation.reason, run.traces, run.evidence
+        )
+
+    # Trust the page, not the report. This runs before the outcome is even looked at, so the
+    # operator's claim is compared against something rather than accepted.
+    held = verify_after_return(run.surface, run.capability, step)
+    run.note(
+        "resumed",
+        intervention_id=intervention_id,
+        outcome=resolution.outcome.value,
+        postcondition_held=held,
+        human_actions=len(resolution.human_actions),
+    )
+    run.session.resume()
+
+    return decide_resume(
+        resolution,
+        step,
+        postcondition_held=held,
+        intervention_id=intervention_id,
+        traces=run.traces,
+        evidence=run.evidence,
+    )
+
+
+@dataclass(frozen=True)
+class _Escalation:
+    """A stopping condition that a human could resolve, rather than a terminal result."""
+
+    reason: StuckReason
+    why: str
+
+
 def _run_step(run: _Run, step: Step) -> RunResult | None:
-    """Execute one step. Returns a terminal result, or None to carry on."""
+    """Execute one step, escalating and resuming as many times as it takes.
+
+    The loop exists because a resume can put the step back at the start: a human who approves
+    an irreversible action hands it back for automation to perform, and that is the same code
+    path as the first attempt with one bit changed.
+    """
+    while True:
+        outcome = _attempt_step(run, step)
+        if not isinstance(outcome, _Escalation):
+            return outcome
+
+        resumed = _escalate(run, step, outcome)
+        if not isinstance(resumed, ResumeAction):
+            return resumed
+
+        if resumed is ResumeAction.SKIP:
+            run.traces.append(
+                StepTrace(
+                    index=step.index,
+                    action=step.action,
+                    description=f"{step.description} (completed by a human)",
+                    locator_strategy_used=None,
+                    attempt_count=0,
+                    duration_ms=0,
+                    recovered_by=None,
+                )
+            )
+            return None
+
+        if outcome.reason is StuckReason.RISKY_ACTION_REQUIRES_APPROVAL:
+            run.approved_steps.add(step.index)
+
+
+def _attempt_step(run: _Run, step: Step) -> RunResult | None | _Escalation:
+    """One pass at a step. Returns a terminal result, None on success, or an escalation."""
     index = step.index
     started = time.monotonic()
 
     # (c) the gate decides before anything is touched, and an irreversible step under
-    # require_approval stops here. This is the seam phase 7 resumes through.
+    # require_approval stops here so a human can approve it.
     action = _action_for(step, run.params, run.capability.surface.base_url)
     decision = run.gate.check(action, step.risk)
     if isinstance(decision, Blocked):
-        run.note("policy_block", step_index=index, rule=decision.rule)
-        if decision.rule.startswith("risky_action_policy:require_approval"):
-            return NeedsHumanResult(
-                intervention_id=f"{run.evidence.run_id}-approve-{index}",
-                reason=StuckReason.RISKY_ACTION_REQUIRES_APPROVAL,
+        approval_rule = decision.rule.startswith("risky_action_policy:require_approval")
+        if approval_rule and index in run.approved_steps:
+            # A human approved this exact step. Nothing else is waived.
+            run.note("approval_honoured", step_index=index, rule=decision.rule)
+        else:
+            run.note("policy_block", step_index=index, rule=decision.rule)
+            if approval_rule:
+                return _Escalation(
+                    StuckReason.RISKY_ACTION_REQUIRES_APPROVAL,
+                    f"step {index} is {step.risk.value} and the policy requires a human to "
+                    f"approve it before it runs: {step.description}",
+                )
+            return PolicyBlockedResult(
+                rule=decision.rule,
+                attempted_action=step.action,
                 step_index=index,
-                steps=run.traces,
                 evidence=run.evidence,
             )
-        return PolicyBlockedResult(
-            rule=decision.rule,
-            attempted_action=step.action,
-            step_index=index,
-            evidence=run.evidence,
-        )
 
     # (a, b, d) resolve as recorded, bind, act. Retries are bounded and an irreversible
     # step has a budget of zero no matter what the WaitSpec asked for.
@@ -268,16 +395,17 @@ def _run_step(run: _Run, step: Step) -> RunResult | None:
         try:
             if step.target is not None:
                 strategy = run.surface.resolve(step.target).strategy
-            run.surface.act(action, wait=step.wait, risk=step.risk)
+            run.surface.act(
+                action, wait=step.wait, risk=step.risk,
+                approved=index in run.approved_steps,
+            )
             break
         except LocatorAmbiguous as exc:
             _capture_failure(run, index)
-            return NeedsHumanResult(
-                intervention_id=f"{run.evidence.run_id}-ambiguous-{index}",
-                reason=StuckReason.LOCATOR_AMBIGUOUS,
-                step_index=index,
-                steps=run.traces,
-                evidence=run.evidence,
+            return _Escalation(
+                StuckReason.LOCATOR_AMBIGUOUS,
+                f"the recorded locator for step {index} matched more than one element, so "
+                f"there is no safe way to pick one: {exc}",
             )
         except LocatorUnresolved as exc:
             _capture_failure(run, index)
@@ -299,12 +427,14 @@ def _run_step(run: _Run, step: Step) -> RunResult | None:
             if attempts > budget:
                 _capture_failure(run, index)
                 if step.risk is RiskClass.RISKY_IRREVERSIBLE:
-                    return NeedsHumanResult(
-                        intervention_id=f"{run.evidence.run_id}-timeout-{index}",
-                        reason=StuckReason.STEP_TIMEOUT,
-                        step_index=index,
-                        steps=run.traces,
-                        evidence=run.evidence,
+                    # Per DECISIONS 0024 this is never retried automatically, because a
+                    # timeout cannot be told apart from a completed action that did not
+                    # report. A human can look at the screen and tell.
+                    return _Escalation(
+                        StuckReason.STEP_TIMEOUT,
+                        f"step {index} is irreversible and timed out after "
+                        f"{step.wait.timeout_ms}ms. It may or may not have completed, and "
+                        f"nothing here can tell which: {exc}",
                     )
                 return FailureResult(
                     error_class=FailureClass.TIMEOUT,
@@ -354,7 +484,13 @@ def _run_step(run: _Run, step: Step) -> RunResult | None:
         )
 
     # (e) recoveries first, so an interstitial is cleared before anything is judged
-    _apply_recoveries(run, index)
+    stuck_on = _apply_recoveries(run, index)
+    if stuck_on is not None:
+        return _Escalation(
+            StuckReason.RECOVERY_EXHAUSTED,
+            f"the recovery {stuck_on!r} ran its attempts at step {index} and its condition "
+            "is still on screen, so whatever interrupted the flow is still there",
+        )
 
     # (f) a declared business outcome BEFORE the postcondition. A not-found screen fails the
     # postcondition too, and asking that question first turns an answer into a crash.
@@ -413,8 +549,14 @@ def replay(
     evidence: EvidenceRef | Callable[[], EvidenceRef],
     sink: EvidenceSink | None = None,
     allow_draft: bool = False,
+    session: Any = None,
 ) -> RunResult:
-    """Run a recorded capability with no model in the decision loop."""
+    """Run a recorded capability with no model in the decision loop.
+
+    With a Session passed in, every stopping condition a human could resolve becomes a real
+    handoff on this same browser context. Without one, those conditions return NeedsHuman and
+    the run ends, which is the same contract with nobody listening.
+    """
     run = _Run(
         capability=capability,
         params={},
@@ -424,6 +566,7 @@ def replay(
         evidence_source=evidence,
         sink=sink,
         started=time.monotonic(),
+        session=session,
     )
     ref = run.evidence
 
@@ -437,7 +580,7 @@ def replay(
     run.params = bound
     run.note("preflight", capability=capability.capability_id, status=capability.status.value)
 
-    drift = check_fingerprint(capability, surface, ref)
+    drift = check_fingerprint(capability, surface, ref, run.params)
     if drift is not None:
         return drift
 

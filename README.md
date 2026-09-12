@@ -167,19 +167,78 @@ is the guardrail and the stall detector both doing their job.
 
 This is the fastest way to see the system work, and it needs no API key.
 
-### 2. Replay: pending
+### 2. Replay: no model in the loop
 
-Not built yet. Phase 6. When it lands, this section documents replaying a saved capability from
-`capabilities/` with input parameters, and the command in the design rules, section 11 becomes real:
+Replay a saved capability with parameters. Nothing in this path imports a model client, and
+`tests/test_replay_isolation.py` proves it four different ways, including a control test that
+fails if the proof stops being able to detect an import.
 
+```bash
+python -m src.cli replay \
+  --capability capabilities/lookup-member-savings-balance-1.2.0.json \
+  --params '{"member_id": "100001"}' --allow-draft
 ```
-make replay    python -m src.cli replay --capability capabilities/<id>.json --params '{...}'
+
+That exits 0 and writes `savings_balance` to `evidence/<run>/result.json`. Two more, to see the
+result contract rather than just the happy path:
+
+```bash
+python -m src.cli replay --capability capabilities/lookup-member-savings-balance-1.2.0.json \
+  --params '{"member_id": "999999"}' --allow-draft   # exit 10, member_not_found
+python -m src.cli replay --capability capabilities/lookup-member-savings-balance-1.2.0.json \
+  --params '{"member_id": "100003"}' --allow-draft   # exit 10, member_restricted
 ```
 
-### 3. Operator handoff: pending
+Neither is a failure. A record that does not exist is an answer, and the exit code says so.
 
-Not built yet. Phase 7. When it lands, this section documents raising an intervention, taking
-control of the live session, and handing it back.
+`--allow-draft` is needed because nothing in this repo promotes a capability from draft to
+approved yet. See DECISIONS.md 0026.
+
+### 3. Operator handoff
+
+Escalation hands the live browser session to a person and takes it back. Run the console in one
+terminal:
+
+```bash
+python -m src.cli operator --port 8090 --interventions-dir interventions
+```
+
+and a replay that can reach it in another. The capability below has a Confirm step marked
+`risky_irreversible`, and `config/policy.json` sets `risky_action_policy` to `require_approval`,
+so the run stops there and waits:
+
+```bash
+python -m src.cli replay \
+  --capability capabilities/open-member-subaccount-1.0.0.json \
+  --params '{"member_id":"100001","account_type":"Savings","nickname":"Vacation","initial_deposit":"250.00"}' \
+  --allow-draft --headed \
+  --lease-path interventions/lease.json --interventions-dir interventions
+```
+
+Open http://127.0.0.1:8090. The intervention shows which capability, which step, the risk, why
+it stopped, a screenshot, the accessibility snapshot, and the parameter names. Take control,
+work in the browser window the run opened, then return control with one of `approved`,
+`completed_manually` or `aborted`.
+
+**The operator console is deliberately minimal, and live session streaming was cut.** There is
+no co-browsing, no VNC, no screencast. The headed Chromium window that automation opened is the
+live session: the operator works in that window directly. What was cut is the pixel stream. What
+is real is the transfer model itself, and that is the part worth checking:
+
+- the run pauses and holds no lease while a human has it, enforced on every `act()` and every
+  `resolve()` rather than by convention
+- the handoff packet carries the five things section 3.6 asks for, with parameter names and
+  sensitivities but never parameter values
+- control returns on the **same browser context and the same page**, never a fresh one
+- what the human did comes back as evidence: which fields they changed and what they clicked,
+  by identity and never by value, plus accessibility snapshots from before and after
+- on resume the page is re-observed and the step is re-verified. An operator reporting
+  `completed_manually` on a step the page does not show as done fails the run rather than
+  continuing
+- `retry_step` is refused in code on an irreversible step, not merely hidden in the UI
+
+Without `--lease-path` the run holds an in-process lease, invariant 10 still holds, and a
+stopping condition ends the run with exit 20 instead of waiting for a person.
 
 ## Tests and checks
 

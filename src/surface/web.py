@@ -38,6 +38,9 @@ from src.policy.gate import Blocked, PolicyGate
 from src.surface.actions import Action, ActionOutcome
 from src.surface.locating import Built, Scope, build, frame_scope
 from src.surface.observation import Observation, parse_aria_snapshot
+from src.escalation.lease import ControlLost, InProcessLease
+
+_APPROVAL_RULE = "risky_action_policy:require_approval"
 from src.surface.protocol import (
     ActionTimeout,
     LocatorAmbiguous,
@@ -78,6 +81,10 @@ class WebSurface:
         self._context = self._browser.new_context()
         self._page = self._context.new_page()
         self._last: Observation | None = None
+        # Invariant 10: there is no unleased surface. Without an operator attached this is an
+        # in-process lease that automation already holds, so the assertion below is
+        # unconditional on every path including every test.
+        self._lease: Any = InProcessLease()
         # The application answering with a 500 is a different thing from a checkpoint that
         # did not hold, and only the transport knows which happened. Playwright renders an
         # error page like any other, so without this the two are indistinguishable.
@@ -88,6 +95,16 @@ class WebSurface:
     def page(self) -> Any:
         """The live page. For the operator handoff in phase 7, not for building locators."""
         return self._page
+
+    def attach_lease(self, lease: Any) -> None:
+        """Swap the in-process lease for the shared one a Session owns."""
+        self._lease = lease
+
+    def assert_control(self) -> None:
+        """Invariant 10. Called before any Playwright call that acts or decides."""
+        lease = self._lease.read()
+        if not lease.automation_may_act:
+            raise ControlLost(lease.state, lease.holder)
 
     def _remember_status(self, response: Any) -> None:
         if response.request.is_navigation_request() and response.frame is self._page.main_frame:
@@ -380,6 +397,10 @@ class WebSurface:
         picking one. Waiting could only ever turn two matches into one by luck, and a
         fallback that happens to work does not make the ambiguity safe.
         """
+        # Resolving drives the browser and decides what the run does next, so it is covered
+        # by invariant 10 exactly as acting is.
+        self.assert_control()
+
         scope: Scope = frame_scope(self._page, bundle.frame_path)
         tiers: list[LocatorSpec] = [bundle.primary, *bundle.fallbacks]
         builts: list[tuple[int, LocatorSpec, Built]] = [
@@ -427,10 +448,20 @@ class WebSurface:
         *,
         wait: WaitSpec | None = None,
         risk: RiskClass | None = None,
+        approved: bool = False,
     ) -> ActionOutcome:
+        # Control first, then policy. A surface call made while a human is driving is not a
+        # policy question, it is two drivers on one browser, and the gate cannot see it.
+        self.assert_control()
+
         decision = self._gate.check(action, risk)
         if isinstance(decision, Blocked):
-            raise PolicyViolation(decision.rule, decision.reason)
+            # A human approving a step has to be able to reach the surface, and the gate here
+            # is the enforcement point per invariant 3, so the approval has to arrive here
+            # rather than being consumed by a caller's own earlier check. It waives exactly
+            # one rule for exactly this call.
+            if not (approved and decision.rule.startswith(_APPROVAL_RULE)):
+                raise PolicyViolation(decision.rule, decision.reason)
 
         started = time.monotonic()
         strategy: str | None = None

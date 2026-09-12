@@ -102,8 +102,13 @@ class Surface(Protocol):
         *,
         wait: WaitSpec | None = None,
         risk: RiskClass | None = None,
+        approved: bool = False,
     ) -> ActionOutcome:
         """Perform an action, after the policy gate has allowed it.
+
+        `approved` carries one human decision for one call. It waives the approval
+        requirement and nothing else: the host allowlist, the denied paths and the allowed
+        action list all still apply, and a block from any of those still raises.
 
         `wait` is the recorded WaitSpec for this step, applied after the action lands.
         `risk` is the recorded risk classification, which exists during replay and does not

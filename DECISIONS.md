@@ -1003,3 +1003,189 @@ Known weakness: only the prefix is stripped, so a discovery run that wandered on
 host would still record an absolute URL for that step. The policy gate's `allowed_hosts` makes
 that hard to reach rather than impossible, and nothing currently rejects an artifact whose
 navigate step names a host.
+
+## 0029. the control lease is a polled file
+
+Phase 7.
+
+Who is allowed to touch the browser is one small JSON file, written atomically and polled by
+both sides. No queue, no socket, no database, no lock.
+
+There are exactly two processes and exactly one mutable fact between them. A file holds that
+fact, `os.replace` makes each write atomic, and both sides read it whenever they need to know.
+That is the entire concurrency design, and it fits in one module you can read in a minute.
+
+It is also more robust than the alternatives for this particular shape. Either side can be
+restarted and the state survives, because the state is not in either process. A reviewer can
+`cat` it. A test can assert on it without standing up a broker. And when the console is not
+running at all, the run still holds a lease and invariant 10 still means something, which is
+why `InProcessLease` exists: not a stub, but the same protocol with one participant.
+
+Rejected: a socket or an HTTP call from the run to the console. It inverts the dependency,
+so the run cannot start unless the console is already up, and it turns an operator restart
+into a lost session. Rejected: a queue or a database. Section 8 names both as explicitly not
+rewarded, and neither buys anything here. The polling interval is half a second against a
+human who takes minutes.
+
+No locking, deliberately. The transition table gives each state exactly one legal writer:
+automation owns running and resuming, the operator owns paused and human_control. Two writers
+never contend for the same transition, so a lock would guard a case the protocol has already
+made illegal.
+
+Known weakness: `deadline_at` is compared against wall clock time on whichever machine reads
+it, so two machines with skewed clocks would disagree about expiry. Both sides are local here.
+
+## 0030. the headed browser window is the live session
+
+Phase 7.
+
+The operator console shows the intervention, the screenshot, the accessibility snapshot and
+the parameter names, and it moves the lease. It does not show the live page. The human works
+in the Chromium window that automation already opened, with their own mouse and keyboard.
+
+This is the cut, and it is a real one: there is no co-browsing, no WebRTC, no VNC, no
+screencast. Section 8 rules those out by name, and the reason survives the rule. Streaming the
+session is a large amount of infrastructure that demonstrates nothing about the thing being
+assessed. What is being assessed is whether control can actually change hands safely: whether
+automation stops, whether a human gets enough context to act, whether the same session is
+handed over rather than a new one, and whether what the human did comes back as evidence. All
+four of those are real here and none of them needs a pixel stream.
+
+What is genuinely lost: the operator has to be at the machine running the browser. A remote
+operator cannot use this. That is a deployment limitation, not a design one, and the seam it
+would attach to is the lease, which is already the only thing the two sides share.
+
+Consequence for the console: `POST /take` cannot install the page recorder, because the Flask
+process holds no browser handle. Installation happens in `Session.escalate`, before the
+handover, which is the only side of the boundary that has a page. The route only moves the
+lease.
+
+## 0031. resume always re-verifies, and never trusts the report
+
+Phase 7.
+
+When control comes back, automation re-observes the page and evaluates the current step's
+postcondition, or the capability checkpoint if the step has none, before it looks at what the
+operator said. `completed_manually` is refused outright if the page does not show the step as
+done.
+
+An operator's answer is a claim about a screen. The screen is right there. Checking costs one
+observation and removes an entire class of failure where the run proceeds from a state nobody
+established: the human meant to click Confirm and clicked Cancel, or fixed a different member's
+record, or was interrupted halfway and came back thinking they had finished. In a back office
+banking flow the step after a wrongly skipped one operates on the wrong screen.
+
+There is a second reason, which is that a human who has had the session may have moved it
+anywhere. They may have navigated away, opened another member, or left a modal open. Even for
+`approved`, where nobody claims to have done anything, the page automation resumes onto is not
+necessarily the page it paused on. So the re-observation is unconditional rather than tied to
+one outcome.
+
+Rejected: trust `completed_manually` and carry on, treating the operator as authoritative
+because they are the human. It makes the system's correctness depend on a person's memory of
+what they did several minutes ago in a UI they were fighting. The operator's note is kept, and
+it is kept as a note: it appears in the failure message when the page disagrees, so the person
+reading the failure can see both accounts of what happened.
+
+Known weakness: verification is only as good as the declared postcondition. A step with no
+postcondition falls back to the capability checkpoint, and a step with neither cannot be
+verified at all, so `completed_manually` on such a step is refused rather than assumed. That is
+strict, and it is the right direction to be strict in.
+
+## 0032. retry_step is refused on an irreversible step
+
+Phase 7.
+
+The console does not offer `retry_step` when the step is `risky_irreversible`, and
+`refuse_unsafe_outcome` rejects it even when the console is bypassed entirely.
+
+This is 0024 with a human added, and the human makes it worse rather than better. Automation
+timing out on an irreversible step cannot tell a slow response from a completed action. A
+person who has been inside that session for five minutes has had every opportunity to click
+the thing themselves, and may well have, possibly without remembering clearly. Re-performing
+opens the account twice. The operator has three outcomes that are all safe: approve it and let
+automation do it, say they did it and have that verified against the page, or abort.
+
+Enforced in two places on purpose. Hiding the option in the UI is a courtesy to the operator.
+The refusal in `refuse_unsafe_outcome` is the control, because a resolution file can be written
+by hand, by a script, or by some future second console, and the rule has to live where the
+resolution is read rather than where it is offered. There is a test for each.
+
+Rejected: allow retry with a confirmation dialog. A dialog is a UI element, and the whole point
+of invariant 3 is that constraints which matter live in Python rather than in a prompt or a
+screen. Rejected: allow retry if the postcondition does not hold, on the grounds that the
+action evidently did not happen. Tempting and wrong for the same reason as 0024: a
+confirmation screen that is slow to render is indistinguishable from one that never will be,
+and this is the case where the page cannot be trusted to be finished.
+
+## 0033. what the human typed is never recorded
+
+Phase 7.
+
+The recorder injected before a handoff captures clicks, navigations, and which field changed.
+It never captures the value that went into a field. The `change` handler reads the element's
+identity and does not touch its value.
+
+Invariant 6 does not stop applying because a person did the typing rather than a model. The
+fields in this application take account numbers, member names and dollar amounts, and an
+intervention file is a durable artifact on disk that outlives the run. A capture that included
+values would be a second path to disk for exactly the data the redaction layer exists to keep
+off it, and a quieter one, because nobody would think to point `--redact` at what a human typed.
+
+Field identity is the part with audit value anyway. "The operator changed the nickname field
+and then clicked Confirm" is what a reviewer needs. What the nickname was is on the screen, in
+the after snapshot, which is a separate and deliberate capture.
+
+Those two aria snapshots are the exception that proves the rule, and they are why the Session
+now takes a Redactor. They show a real back office screen and therefore may show declared
+sensitive values, so they go through the same redaction as evidence does. Without that,
+`interventions/` would have been a second and quieter route past invariant 6 than `evidence/`.
+
+Known weakness: redaction only replaces values the caller declared. A sensitive value nobody
+declared reaches the snapshot, exactly as it would reach evidence. The structural protection is
+in `params_redacted`, which is built from the capability's declared inputs rather than from the
+params dict, so the code path that could leak a parameter value does not exist.
+
+## 0034. the fingerprint check loads the entry screen before comparing
+
+Phase 7, fixing phase 6.
+
+`check_fingerprint` now navigates to the surface's entry path before it compares anything.
+
+It used to observe immediately, which meant it observed `about:blank` on a fresh context. An
+empty title matches no recorded title, so every capability with a fingerprint failed pre-flight,
+and the only capabilities that passed were the ones whose fingerprint recorded nothing at all.
+The one artifact in the repo at the time was in that second category, so the check passed
+everywhere and had never once compared anything. A drift detector that cannot fire is worse
+than no drift detector, because the passing pre-flight reads as evidence that the surface was
+checked.
+
+Found by hand authoring a capability that actually recorded a fingerprint, and watching it fail
+pre-flight against the very application it was written against.
+
+Known weakness: the title comparison is exact equality, and a page title is one of the more
+volatile parts of a legacy app. The intended answer to a changed title is a variant override,
+per 0025, rather than loosening the comparison to containment. Loosening it would make the
+check pass on a page that merely shares a brand prefix, which is most of them.
+
+## 0035. the operator is simulated on the thread that owns the browser
+
+Phase 7.
+
+The end to end handoff test drives the operator from inside `await_return`, through a Session
+subclass, rather than from a second thread.
+
+Playwright's sync API binds a page to the thread that created it. A second thread touching that
+page raises before it does anything, so a human simulated in a worker thread cannot click
+anything at all. The options were a second Playwright client attached over CDP, which means
+launching Chromium with a debugging port purely for a test, or acting from inside the wait.
+
+What the subclass gives up is timing realism: the operator acts at a defined moment rather than
+whenever they get to it. What it keeps is everything the handoff is about. The lease moves
+through the console's own HTTP routes, so the routes are under test rather than simulated. The
+human's clicks go through the raw page and touch no LocatorBundle, no policy gate and no step
+index, so they are genuinely not automation. And the test asserts the browser context and page
+objects are identical before and after, which is invariant 7 checked rather than claimed.
+
+Rejected: skip the end to end test and assert only on files. That would test the bookkeeping
+and leave the actual claim, that control changes hands on one live session, unverified.

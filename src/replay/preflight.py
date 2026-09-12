@@ -10,6 +10,8 @@ from typing import Any
 from src.models.capability import Capability
 from src.models.common import ActionType, ApprovalStatus, FailureClass, ValueType
 from src.models.results import EvidenceRef, FailureResult
+from src.surface.actions import NavigateAction
+from src.surface.protocol import ActionTimeout, PolicyViolation
 
 COERCERS: dict[ValueType, Any] = {
     ValueType.STRING: str,
@@ -94,15 +96,37 @@ def check_approval(
 
 
 def check_fingerprint(
-    capability: Capability, surface: Any, evidence: EvidenceRef
+    capability: Capability, surface: Any, evidence: EvidenceRef,
+    params: dict[str, Any] | None = None,
 ) -> FailureResult | None:
     """Is this the application the capability was recorded against.
 
     Only the parts of the fingerprint that were actually recorded are checked. A recorder that
     captured nothing gives nothing to compare, and inventing a comparison would be worse than
     admitting the check is thin.
+
+    The entry screen has to be loaded before there is anything to compare. A fresh browser
+    context sits on about:blank with an empty title, so a check made before navigating fails
+    every capability whose fingerprint records anything at all, and passes only the ones that
+    record nothing. That is the shape of a detector that never fires. See DECISIONS.md 0034.
     """
+    params = params or {}
     fingerprint = capability.surface.fingerprint
+    if not (fingerprint.title or fingerprint.brand_text or fingerprint.landmark_signals):
+        return None
+
+    entry = capability.surface.base_url.rstrip("/") + "/" + capability.surface.entry_path.lstrip("/")
+    for name, value in params.items():
+        entry = entry.replace("{" + name + "}", str(value))
+    try:
+        surface.act(NavigateAction(url=entry))
+    except (ActionTimeout, PolicyViolation) as exc:
+        return _failure(
+            evidence,
+            f"the entry screen at {entry} to load so the fingerprint can be compared",
+            str(exc),
+            FailureClass.SURFACE_UNAVAILABLE,
+        )
     observation = surface.observe()
 
     if fingerprint.title and fingerprint.title != observation.title:
