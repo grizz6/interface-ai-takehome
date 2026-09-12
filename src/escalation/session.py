@@ -124,6 +124,30 @@ class Session:
     def _redact(self, text: str) -> str:
         return str(self.redactor.redact(text)) if self.redactor is not None else text
 
+    def _redact_actions(self, actions: list[CapturedAction]) -> list[CapturedAction]:
+        """Redact the SERIALIZED action, then reparse, so no field can be missed.
+
+        A captured action carries a url and the visible text of what was clicked, and both can
+        hold a value: /member/100001/subaccount is a member id in a path, and a link labelled
+        with an account number is an account number. Redacting named fields would mean
+        remembering to add each new one, which is exactly the failure this seam exists to
+        prevent. Found by the phase 9 sweep, which caught the url field doing precisely that.
+        """
+        if self.redactor is None:
+            return actions
+        cleaned: list[CapturedAction] = []
+        for action in actions:
+            try:
+                cleaned.append(
+                    CapturedAction.model_validate_json(
+                        self._redact(action.model_dump_json())
+                    )
+                )
+            except ValueError:
+                # Redaction must never lose an audit entry. Keep the identity, drop the text.
+                cleaned.append(CapturedAction(kind=action.kind, tag=action.tag))
+        return cleaned
+
     # -- control -------------------------------------------------------------
     def assert_control(self) -> None:
         lease = self.lease.read()
@@ -236,7 +260,11 @@ class Session:
             pass
 
         enriched = resolution.model_copy(
-            update={"human_actions": actions, "url_after": url_after, "aria_after": aria_after}
+            update={
+                "human_actions": self._redact_actions(actions),
+                "url_after": url_after,
+                "aria_after": aria_after,
+            }
         )
         self.store.resolve(intervention_id, enriched)
         return enriched

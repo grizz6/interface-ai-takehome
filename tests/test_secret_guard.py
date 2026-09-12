@@ -92,6 +92,14 @@ def _locate(path: Path, text: str, needle: str) -> str:
     """Name the field holding a match, falling back to the file itself."""
     if path.suffix not in {".json", ".jsonl"}:
         return "<binary or plain text>"
+    # Whole file first: a pretty printed JSON document has no line that parses on its own, and
+    # reporting <unparseable json> for the most common shape makes a finding much less useful.
+    try:
+        fields = list(_fields_containing(json.loads(text), needle))
+        if fields:
+            return fields[0]
+    except json.JSONDecodeError:
+        pass
     try:
         for line in text.splitlines() or [text]:
             if needle not in line:

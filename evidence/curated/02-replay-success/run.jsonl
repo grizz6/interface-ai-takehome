@@ -1,0 +1,5 @@
+{"at": "2026-09-12T17:46:47.635094+00:00", "capability": "lookup-member-savings-balance", "kind": "preflight", "status": "draft"}
+{"at": "2026-09-12T17:46:47.652552+00:00", "attempts": 1, "kind": "action", "step_index": 0, "tier": null}
+{"at": "2026-09-12T17:46:47.692568+00:00", "attempts": 1, "kind": "action", "step_index": 1, "tier": "role_name"}
+{"at": "2026-09-12T17:46:47.706287+00:00", "attempts": 1, "kind": "action", "step_index": 2, "tier": "role_name"}
+{"at": "2026-09-12T17:46:47.753363+00:00", "attempts": 1, "kind": "action", "step_index": 3, "tier": "role_name"}

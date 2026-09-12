@@ -1308,3 +1308,54 @@ Known weakness: `interventions/` is still written by `InterventionStore`, not by
 writer. That is deliberate, because interventions outlive a run and are read by a separate
 process, but it does mean there are two places that write to disk. Both go through the same
 Redactor, and the credential guard walks both.
+
+## 0040. the real discovery run is preserved unredacted, and not regenerated
+
+Phase 9.
+
+`evidence/curated/01-discovery-real` predates the phase 8 writer. It has no `meta.json`, and it
+holds the member id `100001` in plain text in eight places. It has been kept exactly as it was
+recorded rather than regenerated.
+
+Regenerating it means spending a real model call to replace a genuine artifact with a second
+genuine artifact differing only in having one more file. That run is the least reproducible
+thing in the repository: a non deterministic model driving a real browser, once. Trading it for
+tidiness is a bad trade, and doing it without asking would be worse, so it was not done.
+
+The unredacted value is the more interesting half. Every other curated run was produced with
+`--redact` and holds zero raw occurrences. The difference is not carelessness, it is structural:
+at discovery time there is no capability, therefore no `ParamSpec` marking `member_id` as `pii`,
+and the goal sentence handed to the model names the member outright. Redaction protects values
+somebody declared, and during discovery nobody has declared anything yet.
+
+That is a real gap in the design and worth stating rather than hiding, because the same gap
+exists in production. The answer is not to redact harder after the fact. It is that a discovery
+run against real data needs its sensitive inputs declared up front, before the goal is written,
+so `--redact` can be populated from something other than hindsight. Nothing in this repository
+does that today, and the honest position is that discovery evidence is the least protected
+evidence the system produces.
+
+Nothing sensitive is actually exposed here: 100001 is a seeded record in a local stand in
+credit union that ships in this repository.
+
+## 0041. captured human actions carry a url, and it was not redacted
+
+Phase 9, fixing phase 7.
+
+The phase 9 credential sweep found the raw member id in
+`06-escalation-handoff/intervention.json`, in `resolution.human_actions[].url`.
+
+`Session._collect_resolution` redacted `url_after` and `aria_after` and passed the captured
+actions through untouched. Each captured action carries the url it happened on, and
+`/member/100001/subaccount` is a member id in a path. The action's visible `text` is the same
+exposure one step removed: a link labelled with an account number is an account number.
+
+Fixed by redacting the serialized action and reparsing it, rather than by redacting the two
+fields that happen to be strings today. That is the same seam the evidence writer uses and for
+the same reason: naming fields means remembering to add each new one, and this leak is exactly
+what forgetting looks like.
+
+Worth recording how it was found. Phase 7 had a test asserting no typed value reached the
+captured actions, and it passed, because it only checked the values a human typed. The url was
+not typed by anyone, it was ambient. A sweep that walks every byte of a finished run found in
+one pass what a targeted assertion missed, which is the argument for having both.

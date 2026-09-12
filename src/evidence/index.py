@@ -76,12 +76,19 @@ def _duration(meta: dict[str, Any], result: dict[str, Any]) -> int | None:
 
 
 def collect(root: Path | str) -> list[Row]:
-    """One Row per run directory under root, newest first."""
+    """One Row per run directory under root, in name order.
+
+    The row is labelled by the DIRECTORY name, not by meta.json's run_id. In `evidence/` the
+    two are the same. In a curated set they are not: the directories are renamed to say what
+    each run demonstrates, and a table of raw run ids there tells a reader nothing about which
+    row to open. Name order rather than newest first for the same reason, since a curated set
+    is numbered in the order it should be read.
+    """
     rows: list[Row] = []
     base = Path(root)
     if not base.exists():
         return rows
-    for directory in sorted(base.iterdir(), reverse=True):
+    for directory in sorted(base.iterdir()):
         if not directory.is_dir() or directory.name == "curated":
             continue
         meta = _load(directory / "meta.json")
@@ -89,7 +96,7 @@ def collect(root: Path | str) -> list[Row]:
         kind = str(result.get("kind", "")) or "none"
         rows.append(
             Row(
-                run_id=str(meta.get("run_id") or directory.name),
+                run_id=directory.name,
                 kind=str(meta.get("kind") or "unknown"),
                 result_kind=kind,
                 exit_code=meta.get("exit_code") if isinstance(meta.get("exit_code"), int)

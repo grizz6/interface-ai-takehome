@@ -1,0 +1,53 @@
+{
+  "code": "member_not_found",
+  "detected_at_step": 3,
+  "evidence": {
+    "directory": "evidence/20260912-174648-89f9",
+    "log_path": "evidence/20260912-174648-89f9/run.jsonl",
+    "run_id": "20260912-174648-89f9",
+    "screenshot_paths": [
+      "evidence/20260912-174648-89f9/screenshots/000.png"
+    ]
+  },
+  "kind": "business_outcome",
+  "message": "No member record matches the supplied member id.",
+  "partial_outputs": {},
+  "steps": [
+    {
+      "action": "navigate",
+      "attempt_count": 1,
+      "description": "navigate",
+      "duration_ms": 15,
+      "index": 0,
+      "locator_strategy_used": null,
+      "recovered_by": null
+    },
+    {
+      "action": "click",
+      "attempt_count": 1,
+      "description": "click",
+      "duration_ms": 26,
+      "index": 1,
+      "locator_strategy_used": "role_name",
+      "recovered_by": null
+    },
+    {
+      "action": "type",
+      "attempt_count": 1,
+      "description": "type <param:member_id>",
+      "duration_ms": 5,
+      "index": 2,
+      "locator_strategy_used": "role_name",
+      "recovered_by": null
+    },
+    {
+      "action": "click",
+      "attempt_count": 1,
+      "description": "click",
+      "duration_ms": 38,
+      "index": 3,
+      "locator_strategy_used": "role_name",
+      "recovered_by": null
+    }
+  ]
+}

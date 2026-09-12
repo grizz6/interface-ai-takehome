@@ -1,0 +1,13 @@
+{
+  "action": null,
+  "detail": {
+    "code": "member_not_found",
+    "message": "No member record matches the supplied member id."
+  },
+  "expected": null,
+  "observed": null,
+  "result_kind": "business_outcome",
+  "step_index": -1,
+  "strategies_tried": [],
+  "url": "http://localhost:8080/member/<param:redacted_0>"
+}

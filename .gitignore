@@ -13,10 +13,13 @@ __pycache__/
 playwright-browsers/
 .playwright/
 
-# generated during development, selectively force-added in phase 9
+# Developer runs are litter. The curated set and the README are the deliverable.
+# git cannot re-include a path under an excluded directory, so evidence/curated
+# itself has to be un-excluded before anything inside it can be tracked.
 evidence/*
 !evidence/.gitkeep
 !evidence/README.md
+!evidence/curated/
 interventions/*
 !interventions/.gitkeep
 

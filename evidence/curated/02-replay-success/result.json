@@ -1,0 +1,54 @@
+{
+  "duration_ms": 169,
+  "evidence": {
+    "directory": "evidence/20260912-174647-7ffc",
+    "log_path": "evidence/20260912-174647-7ffc/run.jsonl",
+    "run_id": "20260912-174647-7ffc",
+    "screenshot_paths": [
+      "evidence/20260912-174647-7ffc/screenshots/000.png"
+    ]
+  },
+  "kind": "success",
+  "outputs": {
+    "savings_balance": 4182.55
+  },
+  "recoveries_applied": [],
+  "steps": [
+    {
+      "action": "navigate",
+      "attempt_count": 1,
+      "description": "navigate",
+      "duration_ms": 17,
+      "index": 0,
+      "locator_strategy_used": null,
+      "recovered_by": null
+    },
+    {
+      "action": "click",
+      "attempt_count": 1,
+      "description": "click",
+      "duration_ms": 27,
+      "index": 1,
+      "locator_strategy_used": "role_name",
+      "recovered_by": null
+    },
+    {
+      "action": "type",
+      "attempt_count": 1,
+      "description": "type <param:member_id>",
+      "duration_ms": 5,
+      "index": 2,
+      "locator_strategy_used": "role_name",
+      "recovered_by": null
+    },
+    {
+      "action": "click",
+      "attempt_count": 1,
+      "description": "click",
+      "duration_ms": 45,
+      "index": 3,
+      "locator_strategy_used": "role_name",
+      "recovered_by": null
+    }
+  ]
+}

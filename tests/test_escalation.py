@@ -547,6 +547,7 @@ def test_captured_human_actions_name_the_field_and_never_its_value(
         lease_path=wired["lease"],
         interventions_dir=wired["interventions"],
         evidence_sink=wired["writer"],
+        redactor=Redactor({"redacted_0": "100001"}),
     )
     result = _run(wired, surface, approval_policy, session)
     assert isinstance(result, SuccessResult), result
@@ -565,6 +566,11 @@ def test_captured_human_actions_name_the_field_and_never_its_value(
     recorded = json.dumps([a.model_dump(mode="json") for a in actions])
     for typed in ("Corrected By Operator", "500.00", "Money Market"):
         assert typed not in recorded, f"{typed!r} was captured as a value"
+
+    # Including the url each action carried. A path like /member/100001/subaccount is a member
+    # id in a URL, and the phase 9 sweep caught exactly that reaching an intervention file.
+    for action in actions:
+        assert "100001" not in (action.url or ""), "a raw value survived in a captured url"
 
     # The after snapshot is a different thing and deliberately shows the screen as it stands,
     # because it is the evidence that survives when the injected recorder does not. It goes

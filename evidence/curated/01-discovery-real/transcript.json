@@ -1,0 +1,418 @@
+{
+  "actions": [
+    {
+      "action_kind": "navigate",
+      "bundle": null,
+      "duration_ms": 43,
+      "literal_value": null,
+      "note": "navigate",
+      "obs_hash_after": null,
+      "obs_hash_before": null,
+      "outcome_ok": true,
+      "ref_used": null,
+      "seq": 0,
+      "tier_resolved": null
+    },
+    {
+      "action_kind": "click",
+      "bundle": {
+        "fallbacks": [
+          {
+            "container": null,
+            "exact": true,
+            "strategy": "text_relation",
+            "text": "Member Lookup"
+          }
+        ],
+        "frame_path": [],
+        "geometry_hint": {
+          "height": 14,
+          "width": 88,
+          "x": 63,
+          "y": 53
+        },
+        "notes": "tier 2 unavailable: no text bearing cell labels this element",
+        "primary": {
+          "exact": true,
+          "name": "Member Lookup",
+          "role": "link",
+          "strategy": "role_name"
+        },
+        "recorded_accessible_name": "Member Lookup"
+      },
+      "duration_ms": 65,
+      "literal_value": null,
+      "note": "click",
+      "obs_hash_after": null,
+      "obs_hash_before": "f99c1fd77d0647e6",
+      "outcome_ok": true,
+      "ref_used": "e19",
+      "seq": 1,
+      "tier_resolved": "role_name"
+    },
+    {
+      "action_kind": "type",
+      "bundle": {
+        "fallbacks": [
+          {
+            "label_text": "Member ID",
+            "relation": "cell_to_left",
+            "role": "textbox",
+            "strategy": "label_relation"
+          },
+          {
+            "container": {
+              "dom_id_hint": null,
+              "heading_text": "Member ID",
+              "role": "table"
+            },
+            "name": "Member ID",
+            "ordinal": 0,
+            "role": "textbox",
+            "strategy": "container_ordinal"
+          },
+          {
+            "container": null,
+            "exact": true,
+            "strategy": "text_relation",
+            "text": "Member ID"
+          },
+          {
+            "brittle": true,
+            "css": "#ctl00_ContentPlaceHolder1_txtMemberId",
+            "note": "brittle, recorded because no better tier applied. no reason recorded",
+            "strategy": "css_fallback"
+          }
+        ],
+        "frame_path": [],
+        "geometry_hint": {
+          "height": 22,
+          "width": 134,
+          "x": 123,
+          "y": 126
+        },
+        "notes": null,
+        "primary": {
+          "exact": true,
+          "name": "Member ID",
+          "role": "textbox",
+          "strategy": "role_name"
+        },
+        "recorded_accessible_name": "Member ID"
+      },
+      "duration_ms": 5,
+      "literal_value": "100001",
+      "note": "type 100001",
+      "obs_hash_after": null,
+      "obs_hash_before": "26bf58d4987cce92",
+      "outcome_ok": true,
+      "ref_used": "f1e34",
+      "seq": 2,
+      "tier_resolved": "role_name"
+    },
+    {
+      "action_kind": "click",
+      "bundle": {
+        "fallbacks": [
+          {
+            "container": {
+              "dom_id_hint": null,
+              "heading_text": "Member ID",
+              "role": "table"
+            },
+            "name": "Search",
+            "ordinal": 0,
+            "role": "button",
+            "strategy": "container_ordinal"
+          },
+          {
+            "container": null,
+            "exact": true,
+            "strategy": "text_relation",
+            "text": "Search"
+          },
+          {
+            "brittle": true,
+            "css": "#ctl00_ContentPlaceHolder1_btnSearch",
+            "note": "brittle, recorded because no better tier applied. tier 2 unavailable: no text bearing cell labels this element",
+            "strategy": "css_fallback"
+          }
+        ],
+        "frame_path": [],
+        "geometry_hint": {
+          "height": 20,
+          "width": 60,
+          "x": 123,
+          "y": 156
+        },
+        "notes": "tier 2 unavailable: no text bearing cell labels this element",
+        "primary": {
+          "exact": true,
+          "name": "Search",
+          "role": "button",
+          "strategy": "role_name"
+        },
+        "recorded_accessible_name": "Search"
+      },
+      "duration_ms": 105,
+      "literal_value": null,
+      "note": "click",
+      "obs_hash_after": null,
+      "obs_hash_before": "bb0bb74e904385bc",
+      "outcome_ok": true,
+      "ref_used": "f1e38",
+      "seq": 3,
+      "tier_resolved": "role_name"
+    }
+  ],
+  "declared": {
+    "capability_name": "lookup-member-savings-balance",
+    "checkpoint": {
+      "description": "Look up a member by ID and read their current savings balance.",
+      "signal": {
+        "aria_template": null,
+        "case_sensitive": false,
+        "frame_path": [],
+        "kind": "text_present",
+        "locator": null,
+        "pattern": null,
+        "text": "Member Detail - Member ID",
+        "url_pattern": null
+      },
+      "timeout_ms": 5000
+    },
+    "description": "Look up a member by ID and read their current savings balance.",
+    "inputs": [
+      {
+        "description": "Member ID to look up",
+        "example": null,
+        "name": "member_id",
+        "pattern": null,
+        "required": true,
+        "sensitivity": "pii",
+        "type": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "description": "Current savings account balance",
+        "extraction": {
+          "attribute": null,
+          "locator": {
+            "fallbacks": [
+              {
+                "container": {
+                  "dom_id_hint": null,
+                  "heading_text": "Deposit Accounts",
+                  "role": "table"
+                },
+                "name": "4,182.55",
+                "ordinal": 0,
+                "role": "cell",
+                "strategy": "container_ordinal"
+              },
+              {
+                "container": null,
+                "exact": true,
+                "strategy": "text_relation",
+                "text": "4,182.55"
+              }
+            ],
+            "frame_path": [
+              "maincontent"
+            ],
+            "geometry_hint": {
+              "height": 23,
+              "width": 288,
+              "x": 557,
+              "y": 119
+            },
+            "notes": null,
+            "primary": {
+              "exact": true,
+              "name": "4,182.55",
+              "role": "cell",
+              "strategy": "role_name"
+            },
+            "recorded_accessible_name": "4,182.55"
+          },
+          "parse": "currency",
+          "required": true,
+          "source": "text",
+          "strip_pattern": null
+        },
+        "name": "savings_balance",
+        "sensitivity": "none",
+        "type": "currency"
+      }
+    ]
+  },
+  "events": [
+    {
+      "at": "2026-09-12T02:56:45.341503Z",
+      "kind": "action",
+      "payload": {
+        "action_kind": "navigate",
+        "ref": null,
+        "tier": null
+      },
+      "seq": 1
+    },
+    {
+      "at": "2026-09-12T02:56:45.396616Z",
+      "kind": "observation",
+      "payload": {
+        "hash": "f99c1fd77d0647e6",
+        "url": "http://localhost:8080/"
+      },
+      "seq": 2
+    },
+    {
+      "at": "2026-09-12T02:57:01.409240Z",
+      "kind": "model_text",
+      "payload": {
+        "text": "I will click on the \"Member Lookup\" link to navigate to the member search page."
+      },
+      "seq": 3
+    },
+    {
+      "at": "2026-09-12T02:57:01.519061Z",
+      "kind": "action",
+      "payload": {
+        "action_kind": "click",
+        "ref": "e19",
+        "tier": "role_name"
+      },
+      "seq": 4
+    },
+    {
+      "at": "2026-09-12T02:57:01.519071Z",
+      "kind": "tool_result",
+      "payload": {
+        "detail": "Done. The control was found by role_name. Look to see the result.",
+        "ok": true,
+        "tool": "click"
+      },
+      "seq": 5
+    },
+    {
+      "at": "2026-09-12T02:57:01.555833Z",
+      "kind": "observation",
+      "payload": {
+        "hash": "26bf58d4987cce92",
+        "url": "http://localhost:8080/search"
+      },
+      "seq": 6
+    },
+    {
+      "at": "2026-09-12T02:57:08.120391Z",
+      "kind": "model_text",
+      "payload": {
+        "text": "I will enter the Member ID 100001 into the search field."
+      },
+      "seq": 7
+    },
+    {
+      "at": "2026-09-12T02:57:08.148656Z",
+      "kind": "action",
+      "payload": {
+        "action_kind": "type",
+        "ref": "f1e34",
+        "tier": "role_name"
+      },
+      "seq": 8
+    },
+    {
+      "at": "2026-09-12T02:57:08.148673Z",
+      "kind": "tool_result",
+      "payload": {
+        "detail": "Done. The control was found by role_name. Look to see the result.",
+        "ok": true,
+        "tool": "type_text"
+      },
+      "seq": 9
+    },
+    {
+      "at": "2026-09-12T02:57:08.359708Z",
+      "kind": "observation",
+      "payload": {
+        "hash": "bb0bb74e904385bc",
+        "url": "http://localhost:8080/search"
+      },
+      "seq": 10
+    },
+    {
+      "at": "2026-09-12T02:57:10.624700Z",
+      "kind": "model_text",
+      "payload": {
+        "text": "I will click the \"Search\" button."
+      },
+      "seq": 11
+    },
+    {
+      "at": "2026-09-12T02:57:10.740861Z",
+      "kind": "action",
+      "payload": {
+        "action_kind": "click",
+        "ref": "f1e38",
+        "tier": "role_name"
+      },
+      "seq": 12
+    },
+    {
+      "at": "2026-09-12T02:57:10.740868Z",
+      "kind": "tool_result",
+      "payload": {
+        "detail": "Done. The control was found by role_name. Look to see the result.",
+        "ok": true,
+        "tool": "click"
+      },
+      "seq": 13
+    },
+    {
+      "at": "2026-09-12T02:57:10.792657Z",
+      "kind": "observation",
+      "payload": {
+        "hash": "dfa33c8140654dfb",
+        "url": "http://localhost:8080/member/100001"
+      },
+      "seq": 14
+    },
+    {
+      "at": "2026-09-12T02:58:05.548042Z",
+      "kind": "verification",
+      "payload": {
+        "attempt": 1,
+        "detail": null,
+        "ok": true
+      },
+      "seq": 15
+    },
+    {
+      "at": "2026-09-12T02:58:05.548152Z",
+      "kind": "stop",
+      "payload": {
+        "reason": "goal_reached"
+      },
+      "seq": 16
+    }
+  ],
+  "goal": "look up member 100001 and read their current savings balance",
+  "model": "gemini-3.6-flash",
+  "run_id": "20260912-025644-fb49",
+  "stop_reason": "goal_reached",
+  "surface": {
+    "app_id": "localhost",
+    "base_url": "http://localhost:8080",
+    "entry_path": "/",
+    "fingerprint": {
+      "aria_template": null,
+      "brand_text": null,
+      "captured_at": "2026-09-12T02:56:45.289847Z",
+      "landmark_signals": [],
+      "title": null
+    },
+    "kind": "legacy_web",
+    "variant_id": null
+  }
+}
