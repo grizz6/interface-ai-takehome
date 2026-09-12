@@ -23,12 +23,16 @@ log those are assembled from is [DECISIONS.md](DECISIONS.md).
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -e .
+.venv/bin/pip install -e ".[dev]"
 .venv/bin/playwright install chromium
 ```
 
-The editable install pulls dependencies from `pyproject.toml`. The second command downloads the
-browser Playwright drives, roughly 100MB, which is not bundled with the package.
+The `[dev]` extra adds pytest and mypy, which the checks further down use. Without it the
+package still runs but `make test` has nothing to run. The last command downloads the browser
+Playwright drives, roughly 100MB, which is not bundled with the package.
+
+Every `make` target uses `.venv/bin/python`, so activate nothing and set nothing up beyond the
+three commands above.
 
 ### Configuration
 

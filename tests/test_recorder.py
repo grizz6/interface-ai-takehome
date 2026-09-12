@@ -28,7 +28,9 @@ from src.policy.loading import load_policy_config
 from src.recorder.compile import CompileFailure, compile_capability
 
 POLICY = load_policy_config("config/policy.json")
-REAL = Path("evidence/20260912-025644-fb49/transcript.json")
+# The curated copy, which is tracked. The original run directory is gitignored, so
+# pointing at it meant these two tests silently skipped in every clone but mine.
+REAL = Path("evidence/curated/01-discovery-real/transcript.json")
 
 
 def bundle(name: str) -> LocatorBundle:

@@ -55,7 +55,11 @@ def test_no_ref_from_a_real_run_reached_a_recorded_bundle(path: Path) -> None:
     """
     raw = json.loads(path.read_text())
     refs = _refs_used(raw)
-    assert refs, "a real run should have used at least one ref"
+    if not refs:
+        # A run that was blocked or stalled before resolving anything used no refs and so
+        # cannot leak one. The README tells a reader to produce exactly such a run, and
+        # asserting otherwise here failed the suite for anyone who followed it.
+        pytest.skip("this run resolved nothing, so there is no ref that could have leaked")
 
     bundles: list[tuple[str, object]] = []
     for action in raw.get("actions", []):
@@ -66,7 +70,7 @@ def test_no_ref_from_a_real_run_reached_a_recorded_bundle(path: Path) -> None:
         locator = (output.get("extraction") or {}).get("locator")
         if locator:
             bundles.append((f"output {output['name']}", locator))
-    assert bundles, "a successful run should have recorded at least one bundle"
+    assert bundles, "this run used refs, so it should have recorded at least one bundle"
 
     leaks = [
         f"{where}: ref {ref!r}"

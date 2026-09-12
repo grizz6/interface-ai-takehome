@@ -1,32 +1,41 @@
-.PHONY: app discover replay operator test schemas
+.PHONY: app discover record replay operator test schemas
 
-# Phase 0 stubs. Each target echoes and exits until its phase lands.
-# The command each one will run is recorded above it.
+# Every target uses the project venv. `python3` alone is the system interpreter, which
+# does not have this project's dependencies, so `make app` in a fresh clone failed.
+PY := .venv/bin/python
 
 # run the local target app (variant A on 8080, variant B on 8081)
 app:
-	python3 target_app/app.py
+	$(PY) target_app/app.py
 
 # Override either on the command line:
 #   make discover GOAL="..." TARGET=http://localhost:8080/member/100001
-GOAL ?= look up member 100001 and read the current savings balance
-TARGET ?= http://localhost:8080/search
+GOAL ?= look up member 100001 and read their current savings balance
+TARGET ?= http://localhost:8080
 
 discover:
-	python3 -m src.cli discover --goal "$(GOAL)" --target "$(TARGET)"
+	$(PY) -m src.cli discover --goal "$(GOAL)" --target "$(TARGET)"
 
-# python -m src.cli replay --capability capabilities/<id>.json --params '{...}'
+# compile a transcript from a finished run into a capability
+TRANSCRIPT ?= evidence/curated/01-discovery-real/transcript.json
+
+record:
+	$(PY) -m src.cli record --transcript "$(TRANSCRIPT)" --out capabilities/
+
+CAPABILITY ?= capabilities/lookup-member-savings-balance-1.2.0.json
+PARAMS ?= {"member_id": "100001"}
+
 replay:
-	@echo "not implemented: replay engine lands in phase 6"
+	$(PY) -m src.cli replay --capability "$(CAPABILITY)" --params '$(PARAMS)' --allow-draft
 
-# python -m src.cli operator
+PORT ?= 8090
+
 operator:
-	@echo "not implemented: operator surface lands in phase 7"
+	$(PY) -m src.cli operator --port $(PORT) --interventions-dir interventions
 
-# pytest
 test:
-	pytest
+	$(PY) -m pytest
 
 # export JSON Schema for Capability and RunResult into schemas/
 schemas:
-	python3 -m src.models.export_schemas
+	$(PY) -m src.models.export_schemas
