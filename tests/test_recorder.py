@@ -21,7 +21,7 @@ from src.discovery.transcript import (
     EventKind,
     TranscriptEvent,
 )
-from src.models.capability import Assertion, ExtractionSpec, OutputSpec, ParamSpec, Signal
+from src.models.capability import Assertion, ParamSpec, Signal
 from src.models.common import SignalKind, ValueType
 from src.models.locator import LocatorBundle, RoleNameLocator
 from src.policy.loading import load_policy_config

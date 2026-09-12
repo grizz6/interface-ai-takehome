@@ -20,7 +20,7 @@ from typing import Final
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.models.capability import Capability, ParamDescriptor
+from src.models.capability import ParamDescriptor
 from src.models.common import ResolutionOutcome, RiskClass, StuckReason
 
 STRICT: Final[ConfigDict] = ConfigDict(extra="forbid", frozen=True)

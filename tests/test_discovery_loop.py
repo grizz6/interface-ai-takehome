@@ -10,7 +10,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-import pytest
 
 from conftest import valid_capability
 from src.discovery.client import ModelTurn, ScriptedClient, StopReason, ToolCall

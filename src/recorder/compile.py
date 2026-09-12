@@ -245,18 +245,6 @@ def _placeholder(text: str, bound: dict[str, str]) -> str:
     return text
 
 
-def _url_after(transcript: DiscoveryTranscript, action_seq: int) -> str | None:
-    """The URL the page was showing at the first observation after an action."""
-    seen_action = False
-    for event in transcript.events:
-        if event.kind.value == "action" and not seen_action:
-            seen_action = True
-        if seen_action and event.kind.value == "observation":
-            url = event.payload.get("url")
-            return str(url) if url else None
-    return None
-
-
 def _observation_urls(transcript: DiscoveryTranscript) -> list[str]:
     return [
         str(e.payload["url"])

@@ -17,11 +17,9 @@ from conftest import valid_capability
 from src.discovery.client import ModelTurn, ScriptedClient, StopReason, ToolCall
 from src.discovery.loop import DiscoveryLimits, run_discovery
 from src.evidence.failure import write_failure_artifacts
-from src.evidence.index import collect, render
 from src.evidence.meta import RunMeta
 from src.evidence.writer import EvidenceWriter
 from src.models.capability import Capability, describe_params
-from src.models.results import SuccessResult
 from src.policy.redaction import Redactor
 from src.replay.engine import replay
 from test_secret_guard import scan_run_directory

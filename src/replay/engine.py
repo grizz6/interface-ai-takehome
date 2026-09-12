@@ -26,7 +26,6 @@ from src.models.capability import (
 )
 from src.models.common import (
     ActionType,
-    ApprovalStatus,
     FailureClass,
     RecoveryAction,
     RiskClass,

@@ -71,10 +71,6 @@ class Resolved:
     handle: object
     frame_path: tuple[str, ...] = ()
 
-    @property
-    def is_primary(self) -> bool:
-        return self.tier_index == 0
-
 
 @runtime_checkable
 class Surface(Protocol):

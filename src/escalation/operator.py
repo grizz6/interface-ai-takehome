@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
-from flask import Flask, Response, abort, redirect, render_template_string, request, send_file, url_for
+from flask import Flask, abort, redirect, render_template_string, request, send_file, url_for
 
 from src.escalation.intervention import (
     InterventionRequest,
