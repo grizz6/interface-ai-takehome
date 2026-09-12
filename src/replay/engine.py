@@ -1,0 +1,484 @@
+"""Deterministic replay. The path an agent actually invokes in production.
+
+NO MODEL IS REACHABLE FROM HERE. Not the SDK, not the discovery package, not by any transitive
+import. design rule 2 calls that a claim the reviewer will check, so it is checked
+mechanically in tests/test_replay_isolation.py rather than asserted here.
+
+The order of classification inside a step is the load bearing decision in this module, and it
+is deliberately not the obvious one. A business outcome is evaluated BEFORE the postcondition,
+because a "no such member" screen fails the postcondition too, and asking "did this step work"
+before asking "did the application give me a legitimate answer" reports a real answer as a
+crash. That is the confusion invariant 5 exists to prevent. See DECISIONS.md 0023.
+"""
+from __future__ import annotations
+
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any, Protocol, runtime_checkable
+
+from src.models.capability import (
+    BusinessOutcomeSpec,
+    Capability,
+    OutputSpec,
+    RecoveryRule,
+    Step,
+)
+from src.models.common import (
+    ActionType,
+    ApprovalStatus,
+    FailureClass,
+    RecoveryAction,
+    RiskClass,
+    StuckReason,
+    ValueType,
+)
+from src.models.policy import PolicyConfig
+from src.models.results import (
+    BusinessOutcomeResult,
+    EvidenceRef,
+    FailureResult,
+    NeedsHumanResult,
+    PolicyBlockedResult,
+    RunResult,
+    StepTrace,
+    SuccessResult,
+)
+from src.policy.gate import Blocked, PolicyGate
+from src.replay.preflight import (
+    COERCERS,
+    check_approval,
+    check_fingerprint,
+    check_parameters,
+)
+from src.surface.actions import (
+    ClickAction,
+    NavigateAction,
+    PressAction,
+    SelectAction,
+    TypeAction,
+)
+from src.surface.extraction import extract_value
+from src.surface.protocol import (
+    ActionTimeout,
+    LocatorAmbiguous,
+    LocatorUnresolved,
+    PolicyViolation,
+)
+
+
+@runtime_checkable
+class EvidenceSink(Protocol):
+    """What replay needs from an evidence writer.
+
+    A protocol rather than an import of EvidenceWriter, so the engine owns no I/O and the
+    isolation proof has one fewer edge to worry about.
+    """
+
+    def event(self, kind: str, **payload: Any) -> None: ...
+    def screenshot(self, png: bytes) -> Any: ...
+    def snapshot(self, name: str, text: str) -> Any: ...
+
+
+@dataclass
+class _Run:
+    """Mutable state for one replay."""
+
+    capability: Capability
+    params: dict[str, Any]
+    surface: Any
+    gate: PolicyGate
+    policy: PolicyConfig
+    evidence_source: EvidenceRef | Callable[[], EvidenceRef]
+    sink: EvidenceSink | None = None
+    traces: list[StepTrace] = field(default_factory=list)
+    recoveries: list[str] = field(default_factory=list)
+    started: float = 0.0
+
+    @property
+    def evidence(self) -> EvidenceRef:
+        source = self.evidence_source
+        return source() if callable(source) else source
+
+    def note(self, kind: str, **payload: Any) -> None:
+        if self.sink is not None:
+            self.sink.event(kind, **payload)
+
+
+def _capture_failure(run: _Run, step_index: int) -> None:
+    """The richer signal section 3.5 asks for, captured at the step that went wrong."""
+    if run.sink is None:
+        return
+    try:
+        observation = run.surface.observe()
+    except Exception:  # noqa: BLE001
+        # Evidence capture must never mask the failure it is describing.
+        run.note("evidence_capture_failed", step_index=step_index)
+        return
+    run.sink.snapshot(f"failure-step-{step_index}-aria", observation.aria_yaml)
+    dom = getattr(run.surface, "dom_snapshot", None)
+    if callable(dom):
+        run.sink.snapshot(f"failure-step-{step_index}-dom", str(dom()))
+    if observation.screenshot_png:
+        run.sink.screenshot(observation.screenshot_png)
+
+
+def _capture_outcome(run: _Run) -> None:
+    """One screenshot of the screen the run was judged on.
+
+    Failures already get the richer capture. A run that succeeded or that returned a business
+    outcome produces no other visual record, and "the balance was 4182.55" is a much weaker
+    claim without the screen it was read from.
+    """
+    if run.sink is None:
+        return
+    try:
+        observation = run.surface.observe()
+    except Exception:  # noqa: BLE001
+        run.note("evidence_capture_failed", step_index=-1)
+        return
+    if observation.screenshot_png:
+        run.sink.screenshot(observation.screenshot_png)
+
+
+def _bind(step: Step, params: dict[str, Any]) -> str | None:
+    if step.value is None:
+        return None
+    if step.value.source == "param":
+        return str(params.get(step.value.param, ""))
+    return step.value.value
+
+
+def _template(url: str, params: dict[str, Any]) -> str:
+    for name, value in params.items():
+        url = url.replace("{" + name + "}", str(value))
+    return url
+
+
+def _action_for(step: Step, params: dict[str, Any], base_url: str = "") -> Any:
+    if step.action is ActionType.NAVIGATE:
+        # The step holds a path; the surface descriptor holds the host. Joining them here is
+        # what lets one artifact run against a second deployment of the same application.
+        target = _template(step.url or "", params)
+        if target.startswith("/"):
+            target = base_url.rstrip("/") + target
+        return NavigateAction(url=target)
+    if step.action is ActionType.PRESS:
+        return PressAction(key=_bind(step, params) or "Enter")
+    assert step.target is not None
+    if step.action is ActionType.CLICK:
+        return ClickAction(bundle=step.target)
+    if step.action is ActionType.TYPE:
+        return TypeAction(bundle=step.target, text=_bind(step, params) or "")
+    return SelectAction(bundle=step.target, value=_bind(step, params) or "")
+
+
+def _retry_budget(step: Step) -> int:
+    """Zero for anything irreversible, whatever the WaitSpec says.
+
+    A transient timeout and a completed action that simply did not report look identical from
+    out here. Retrying a click that opens an account opens it twice. See DECISIONS.md 0024.
+    """
+    if step.risk is RiskClass.RISKY_IRREVERSIBLE:
+        return 0
+    return step.wait.retry_on_timeout
+
+
+def _matching_outcome(
+    run: _Run, index: int
+) -> BusinessOutcomeSpec | None:
+    for outcome in run.capability.known_outcomes:
+        if outcome.check_after_step not in (None, index):
+            continue
+        if run.surface.evaluate(outcome.detect):
+            return outcome
+    return None
+
+
+def _apply_recoveries(run: _Run, index: int) -> None:
+    """Fire any recovery whose detect signal matches, bounded by max_attempts.
+
+    A recovery that fires is metadata on whatever result follows. It never becomes a result
+    kind of its own, per design rules section 7.
+    """
+    for rule in run.capability.recoveries:
+        if rule.applies_to_steps is not None and index not in rule.applies_to_steps:
+            continue
+        for _attempt in range(rule.max_attempts):
+            if not run.surface.evaluate(rule.detect):
+                break
+            _perform_recovery(run, rule)
+            run.recoveries.append(rule.name)
+            run.note("recovery", rule=rule.name, step_index=index)
+
+
+def _perform_recovery(run: _Run, rule: RecoveryRule) -> None:
+    if rule.action is RecoveryAction.DISMISS and rule.action_target is not None:
+        run.surface.act(ClickAction(bundle=rule.action_target))
+    elif rule.action is RecoveryAction.RELOAD:
+        page = getattr(run.surface, "page", None)
+        if page is not None:
+            page.reload()
+    elif rule.action is RecoveryAction.WAIT_RETRY:
+        page = getattr(run.surface, "page", None)
+        if page is not None:
+            page.wait_for_timeout(500)
+
+
+def _coerce_output(spec: OutputSpec, raw: str) -> Any:
+    try:
+        return COERCERS[spec.type](raw)
+    except (TypeError, ValueError):
+        return raw if spec.type is ValueType.STRING else None
+
+
+def _run_step(run: _Run, step: Step) -> RunResult | None:
+    """Execute one step. Returns a terminal result, or None to carry on."""
+    index = step.index
+    started = time.monotonic()
+
+    # (c) the gate decides before anything is touched, and an irreversible step under
+    # require_approval stops here. This is the seam phase 7 resumes through.
+    action = _action_for(step, run.params, run.capability.surface.base_url)
+    decision = run.gate.check(action, step.risk)
+    if isinstance(decision, Blocked):
+        run.note("policy_block", step_index=index, rule=decision.rule)
+        if decision.rule.startswith("risky_action_policy:require_approval"):
+            return NeedsHumanResult(
+                intervention_id=f"{run.evidence.run_id}-approve-{index}",
+                reason=StuckReason.RISKY_ACTION_REQUIRES_APPROVAL,
+                step_index=index,
+                steps=run.traces,
+                evidence=run.evidence,
+            )
+        return PolicyBlockedResult(
+            rule=decision.rule,
+            attempted_action=step.action,
+            step_index=index,
+            evidence=run.evidence,
+        )
+
+    # (a, b, d) resolve as recorded, bind, act. Retries are bounded and an irreversible
+    # step has a budget of zero no matter what the WaitSpec asked for.
+    attempts = 0
+    strategy: str | None = None
+    budget = _retry_budget(step)
+    while True:
+        attempts += 1
+        try:
+            if step.target is not None:
+                strategy = run.surface.resolve(step.target).strategy
+            run.surface.act(action, wait=step.wait, risk=step.risk)
+            break
+        except LocatorAmbiguous as exc:
+            _capture_failure(run, index)
+            return NeedsHumanResult(
+                intervention_id=f"{run.evidence.run_id}-ambiguous-{index}",
+                reason=StuckReason.LOCATOR_AMBIGUOUS,
+                step_index=index,
+                steps=run.traces,
+                evidence=run.evidence,
+            )
+        except LocatorUnresolved as exc:
+            _capture_failure(run, index)
+            tiers = (
+                [step.target.primary.strategy, *(f.strategy for f in step.target.fallbacks)]
+                if step.target
+                else []
+            )
+            return FailureResult(
+                error_class=FailureClass.LOCATOR_UNRESOLVED,
+                step_index=index,
+                action=step.action,
+                expected=f"one element from the recorded bundle, tiers tried: {tiers}",
+                observed=str(exc),
+                steps=run.traces,
+                evidence=run.evidence,
+            )
+        except ActionTimeout as exc:
+            if attempts > budget:
+                _capture_failure(run, index)
+                if step.risk is RiskClass.RISKY_IRREVERSIBLE:
+                    return NeedsHumanResult(
+                        intervention_id=f"{run.evidence.run_id}-timeout-{index}",
+                        reason=StuckReason.STEP_TIMEOUT,
+                        step_index=index,
+                        steps=run.traces,
+                        evidence=run.evidence,
+                    )
+                return FailureResult(
+                    error_class=FailureClass.TIMEOUT,
+                    step_index=index,
+                    action=step.action,
+                    expected=f"the step to settle within {step.wait.timeout_ms}ms",
+                    observed=str(exc),
+                    steps=run.traces,
+                    evidence=run.evidence,
+                )
+            run.note("retry", step_index=index, attempt=attempts)
+        except PolicyViolation as exc:
+            return PolicyBlockedResult(
+                rule=exc.rule,
+                attempted_action=step.action,
+                step_index=index,
+                evidence=run.evidence,
+            )
+
+    run.traces.append(
+        StepTrace(
+            index=index,
+            action=step.action,
+            description=step.description,
+            locator_strategy_used=strategy,
+            attempt_count=attempts,
+            duration_ms=int((time.monotonic() - started) * 1000),
+            recovered_by=run.recoveries[-1] if run.recoveries else None,
+        )
+    )
+    run.note("action", step_index=index, tier=strategy, attempts=attempts)
+
+    # The application itself erroring is not a checkpoint miss and must not be reported as
+    # one. Only the transport can tell the difference, since a 500 page renders like any
+    # other page.
+    status = getattr(run.surface, "last_status", None)
+    if isinstance(status, int) and status >= 500:
+        _capture_failure(run, index)
+        return FailureResult(
+            error_class=FailureClass.APP_ERROR,
+            step_index=index,
+            action=step.action,
+            expected="the application to respond successfully",
+            observed=f"it answered HTTP {status}",
+            steps=run.traces,
+            evidence=run.evidence,
+        )
+
+    # (e) recoveries first, so an interstitial is cleared before anything is judged
+    _apply_recoveries(run, index)
+
+    # (f) a declared business outcome BEFORE the postcondition. A not-found screen fails the
+    # postcondition too, and asking that question first turns an answer into a crash.
+    outcome = _matching_outcome(run, index)
+    if outcome is not None:
+        run.note("business_outcome", code=outcome.code, step_index=index)
+        _capture_outcome(run)
+        return BusinessOutcomeResult(
+            code=outcome.code,
+            message=outcome.description,
+            detected_at_step=index,
+            partial_outputs=_extract(run, only=outcome.partial_outputs)[0],
+            steps=run.traces,
+            evidence=run.evidence,
+        )
+
+    # (g) and only now, did this step do what it said
+    if step.postcondition is not None and not run.surface.evaluate(step.postcondition.signal):
+        _capture_failure(run, index)
+        return FailureResult(
+            error_class=FailureClass.CHECKPOINT_FAILED,
+            step_index=index,
+            action=step.action,
+            expected=step.postcondition.description,
+            observed=f"the postcondition {step.postcondition.signal.kind} did not hold",
+            steps=run.traces,
+            evidence=run.evidence,
+        )
+    return None
+
+
+def _extract(run: _Run, only: list[str] | None = None) -> tuple[dict[str, Any], str | None]:
+    """Read the declared outputs. Returns the values and the name of any required miss."""
+    values: dict[str, Any] = {}
+    for spec in run.capability.outputs:
+        if only is not None and spec.name not in only:
+            continue
+        try:
+            raw = extract_value(run.surface, spec.extraction)
+        except (LocatorAmbiguous, LocatorUnresolved):
+            raw = None
+        if raw is None:
+            if spec.extraction.required and only is None:
+                return values, spec.name
+            continue
+        values[spec.name] = _coerce_output(spec, raw)
+    return values, None
+
+
+def replay(
+    capability: Capability,
+    params: dict[str, Any],
+    surface: Any,
+    policy: PolicyConfig,
+    *,
+    evidence: EvidenceRef | Callable[[], EvidenceRef],
+    sink: EvidenceSink | None = None,
+    allow_draft: bool = False,
+) -> RunResult:
+    """Run a recorded capability with no model in the decision loop."""
+    run = _Run(
+        capability=capability,
+        params={},
+        surface=surface,
+        gate=PolicyGate(policy),
+        policy=policy,
+        evidence_source=evidence,
+        sink=sink,
+        started=time.monotonic(),
+    )
+    ref = run.evidence
+
+    # 1. pre-flight, before a browser is touched
+    approval = check_approval(capability, allow_draft, ref)
+    if approval is not None:
+        return approval
+    bound = check_parameters(capability, params, ref)
+    if isinstance(bound, FailureResult):
+        return bound
+    run.params = bound
+    run.note("preflight", capability=capability.capability_id, status=capability.status.value)
+
+    drift = check_fingerprint(capability, surface, ref)
+    if drift is not None:
+        return drift
+
+    # 2. the steps
+    for step in capability.steps:
+        result = _run_step(run, step)
+        if result is not None:
+            return result
+
+    # 4. the checkpoint the whole flow is judged on
+    if not surface.evaluate(capability.checkpoint.signal):
+        _capture_failure(run, len(capability.steps) - 1)
+        return FailureResult(
+            error_class=FailureClass.CHECKPOINT_FAILED,
+            step_index=len(capability.steps) - 1,
+            action=ActionType.WAIT_FOR,
+            expected=capability.checkpoint.description,
+            observed="the checkpoint did not hold after the last step",
+            steps=run.traces,
+            evidence=run.evidence,
+        )
+
+    # 5. the outputs
+    values, missing = _extract(run)
+    if missing is not None:
+        _capture_failure(run, len(capability.steps) - 1)
+        return FailureResult(
+            error_class=FailureClass.EXTRACTION_FAILED,
+            step_index=len(capability.steps) - 1,
+            action=ActionType.WAIT_FOR,
+            expected=f"a value for required output {missing!r}",
+            observed="nothing could be read from the element it names",
+            steps=run.traces,
+            evidence=run.evidence,
+        )
+
+    _capture_outcome(run)
+    return SuccessResult(
+        outputs=values,
+        steps=run.traces,
+        recoveries_applied=run.recoveries,
+        evidence=run.evidence,
+        duration_ms=int((time.monotonic() - run.started) * 1000),
+    )

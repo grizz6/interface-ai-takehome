@@ -30,7 +30,9 @@ from src.models.results import EXIT_CODES
 from src.policy.gate import PolicyGate
 from src.policy.loading import DEFAULT_POLICY_PATH, PolicyConfigError, load_policy_config
 from src.policy.redaction import Redactor
+from src.models.capability import Capability
 from src.recorder.compile import CompileOutcome, compile_capability
+from src.replay.engine import replay
 from src.surface.web import WebSurface
 
 # gemini-3-flash-preview caps the free tier at 20 requests, which a 25 step run
@@ -84,6 +86,19 @@ def build_parser() -> argparse.ArgumentParser:
     record.add_argument("--transcript", required=True, help="Path to a transcript.json.")
     record.add_argument("--out", default="capabilities", help="Directory to write into.")
     record.add_argument("--policy", default=str(DEFAULT_POLICY_PATH))
+
+    play = sub.add_parser("replay", help="Replay a saved capability, with no model involved.")
+    play.add_argument("--capability", required=True, help="Path to a capability JSON file.")
+    play.add_argument("--params", default="{}", help='JSON object, e.g. \'{"member_id":"100001"}\'')
+    play.add_argument("--config", default=str(DEFAULT_POLICY_PATH))
+    play.add_argument("--evidence-dir", default=str(EVIDENCE_ROOT), metavar="DIR")
+    play.add_argument("--headed", action="store_true")
+    play.add_argument(
+        "--allow-draft",
+        action="store_true",
+        help="Replay a capability that is still draft. For development only.",
+    )
+    play.add_argument("--redact", action="append", default=[], metavar="VALUE")
     return parser
 
 
@@ -178,6 +193,37 @@ def cmd_discover(args: argparse.Namespace) -> int:
     return EXIT_CODES[outcome.result.kind]
 
 
+def cmd_replay(args: argparse.Namespace) -> int:
+    try:
+        policy = load_policy_config(args.config)
+    except PolicyConfigError as exc:
+        print(f"policy: {exc}", file=sys.stderr)
+        return EXIT_CODES["failure"]
+
+    capability = Capability.model_validate_json(Path(args.capability).read_text())
+    params = json.loads(args.params)
+
+    redactor = Redactor({f"redacted_{i}": v for i, v in enumerate(args.redact)})
+    writer = EvidenceWriter(new_run_id(), redactor, root=Path(args.evidence_dir))
+    surface = WebSurface(policy, PolicyGate(policy), headless=not args.headed)
+    try:
+        result = replay(
+            capability,
+            params,
+            surface,
+            policy,
+            evidence=lambda: writer.ref,
+            sink=writer,
+            allow_draft=args.allow_draft,
+        )
+    finally:
+        surface.close()
+
+    writer.write_result(result)
+    print(writer.directory)
+    return EXIT_CODES[result.kind]
+
+
 def main(argv: list[str] | None = None) -> int:
     # The one and only place .env is touched.
     load_dotenv()
@@ -186,6 +232,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_discover(args)
     if args.command == "record":
         return cmd_record(args)
+    if args.command == "replay":
+        return cmd_replay(args)
     return EXIT_CODES["failure"]
 
 

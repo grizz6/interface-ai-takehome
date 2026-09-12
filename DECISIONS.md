@@ -830,3 +830,176 @@ Known weakness: nothing in this repo yet moves a capability from draft to approv
 field is currently write-once and decorative. It becomes load bearing the moment unattended
 replay exists and has to refuse anything not approved, which is the confidence and approval
 stretch goal.
+
+## 0023. outcomes are evaluated before postconditions
+
+Phase 6.
+
+Each step is judged in a fixed order: the policy gate, then resolve and act, then recoveries,
+then declared business outcomes, then the step postcondition. The order is the decision. The
+part that matters is that a declared outcome is checked before the postcondition, not after.
+
+A "no member record matches" screen fails the postcondition of the step that submitted the
+search, and it fails the run checkpoint too. If the postcondition were asked first, every
+not-found lookup would be reported as a checkpoint failure: exit 40, a human paged, a DOM
+snapshot written, all to deliver an answer the system already had and could have returned in
+milliseconds. That is invariant 5 violated in the most expensive direction, because the cost
+lands on a person.
+
+Recoveries come first for the same reason in a different shape. An interstitial that replaced
+the page makes every subsequent question meaningless: the postcondition does not hold, no
+outcome signal matches, and the truthful description of the state is "something got in the
+way". Clearing it before anything is judged means the judgment is about the flow rather than
+about the interruption.
+
+Rejected: evaluate outcomes only after the last step, since that is where the run's answer
+normally is. It reads cleanly and it is wrong. A not-found screen appears at step 3 of 4, and
+the remaining step clicks a control that no longer exists. The run would fail with a locator
+error at step 4 and the real answer, which was on screen one step earlier, would never be
+reported. Outcomes are checked after every step because the flow can end early.
+
+Known weakness: `check_after_step` is a lower bound, so an outcome declared for step 3 is also
+tested at step 4. For terminal outcomes that is harmless, because the first match returns. For
+a non-terminal outcome it would mean repeated evaluation, and nothing yet declares one.
+
+## 0024. irreversible steps get zero retries
+
+Phase 6.
+
+`_retry_budget` returns 0 for any step marked `risky_irreversible`, whatever its WaitSpec asks
+for. A timeout on such a step is never retried; it escalates as `needs_human`.
+
+From outside the browser, a transient timeout and a completed action that simply did not
+report back look identical. There is no observation that separates them, because the evidence
+that would separate them is on the far side of the thing that timed out. Retrying resolves the
+ambiguity in the direction that opens the account twice, transfers the funds twice, or files
+the request twice. Escalating resolves it in the direction that costs a human two minutes.
+The asymmetry is not close, so the choice is not close.
+
+Rejected: read the page after the timeout and retry only if the action clearly did not land.
+This is the tempting one, because usually it works. It fails exactly when it matters: the
+page you would read is the page that was not responding, and a confirmation screen that is
+slow to render is indistinguishable from one that will never render. A check that is reliable
+except during the failure it exists to handle is not a check.
+
+Rejected: make the retry budget configurable per step so an operator can opt in. The operator
+opting in is not the person who eats a duplicated transfer, and a knob like this gets turned
+during an incident, which is the worst possible moment to be making that trade.
+
+Known weakness: a safe step can still be retried into a duplicate if it was misclassified at
+record time. Risk classification comes from the policy's `risky_control_names` and the
+recorder's judgment, and neither is infallible. The mitigation is that the same classification
+also drives the approval gate, so a misclassification is visible in the artifact rather than
+buried in engine behaviour.
+
+## 0025. fingerprint mismatch is a hard stop
+
+Phase 6.
+
+If the recorded surface fingerprint does not match what pre-flight sees, the run stops before
+step 0. It does not attempt the flow and report drift afterwards.
+
+A fingerprint mismatch means the artifact is being replayed against something other than the
+application it was recorded against. There are two ways that happens and both argue for
+stopping. Either it is a different tenant's variant, in which case the correct move is to
+select the override for that variant rather than run the base steps and hope, or the
+application changed under the artifact, in which case the recorded locators describe a screen
+that no longer exists. Continuing means executing a sequence of steps whose meaning is
+unknown, against a real back-office system, on someone's real account.
+
+The cost of stopping wrongly is a human confirming that a cosmetic change is cosmetic. The
+cost of continuing wrongly is an action taken on the wrong screen. In a banking back office
+those are not comparable.
+
+Rejected: warn and continue, gated on how much of the fingerprint matched. A partial-match
+threshold is a number nobody can defend. Two of three landmarks matching is not evidence that
+the third is unimportant; it is more likely evidence that the page changed in the one place
+the artifact was not looking.
+
+Known weakness: the fingerprint is title, brand text, landmark signals and an aria template of
+the chrome. Chrome is the part of a legacy app most likely to be reskinned and least likely to
+change what the flow means, so this will produce false stops on a harmless rebrand. The
+intended answer is a variant override recorded for the reskinned surface, which turns a false
+stop into a declared difference. There is no automatic re-fingerprinting, deliberately: a
+system that quietly updates its own drift detector no longer has one.
+
+## 0026. draft capabilities do not replay unattended
+
+Phase 6.
+
+`check_approval` refuses to run anything still marked `draft` unless the caller passes
+`--allow-draft`. The refusal happens before the browser is touched.
+
+Per 0022, a compiled capability has been executed exactly once, forwards, with a model making
+every decision from a live snapshot. Replay is a different execution path: no model, locators
+resolved from recorded bundles against a page loaded fresh. Nothing about the discovery run
+establishes that the second path works. The most common way it fails is the most boring one, a
+locator that was unique in the state the model was standing in and is not unique on a clean
+load, and the only thing that finds it is a replay.
+
+So the flag is not ceremony. It marks the boundary between "this has been observed to work
+once, in a mode that is not this mode" and "this has been observed to work in the mode you are
+about to run it in".
+
+Rejected: allow draft replay but downgrade the result to advisory. Results are consumed by
+exit code, and an advisory success is exit 0. Anything reading the exit code, which is the
+documented integration point, cannot see the caveat.
+
+Known weakness: nothing in the repo promotes draft to approved. `--allow-draft` is how every
+replay in this phase was run, including the ones in `evidence/`, so in practice the gate is
+currently a speed bump for a human rather than a control on automation. Closing it means a
+promotion path: N successful replays against a known surface, recorded on the artifact, and a
+human signing the transition. That is the confidence and approval stretch goal, and it is not
+in this submission.
+
+## 0027. the member_not_found and member_restricted outcomes were added by hand
+
+Phase 6.
+
+Per 0021, the recorder cannot declare an outcome it never saw, and the discovery run only ever
+saw member 100001, which exists. So the compiled 1.0.0 artifact shipped with `known_outcomes`
+empty. Both outcomes now in the artifact were written by a human against the live screens:
+`member_not_found` in 1.1.0, `member_restricted` and the interstitial recovery in 1.2.0.
+
+`Provenance.human_edited` is set to true on both. That flag exists so a reviewer can tell,
+without diffing against a transcript, which parts of an artifact a model actually observed and
+which parts a person asserted. Those two have different failure modes and deserve different
+levels of trust, and hiding the difference would make the provenance record decorative.
+
+The weakness this introduced, stated when it was introduced: a hand-added detect signal is a
+claim about a screen nobody re-checked. If the text does not match, the outcome never fires,
+and the run reports a checkpoint failure instead. The declaration looks correct in the
+artifact and does nothing at runtime, which is worse than an obvious error.
+
+That weakness is now closed for both. `test_unknown_member_is_a_business_outcome_not_a_failure`
+and `test_restricted_member_is_a_business_outcome_not_a_crash` drive real replays against the
+live app and assert the outcome codes, and
+`test_interstitial_is_dismissed_and_the_run_still_succeeds` arms the real fault and asserts the
+recovery is named in `recoveries_applied`. Every hand-authored declaration in the artifact is
+now exercised by a replay that would fail if the signal were wrong. The general point survives:
+a hand-added declaration is unverified until something hits it, so it needs a test at the
+moment it is written, not later.
+
+## 0028. navigate steps store a path, not a URL
+
+Phase 6.
+
+A navigate step records `/member/{member_id}`. The host comes from `surface.base_url` at replay
+time, and the engine joins them.
+
+The recorder originally stored the observed URL whole, so the first artifact carried
+`http://localhost:8080/`. That pins the capability to the machine that recorded it. The brief
+asks for one artifact to run against the same application deployed differently, which is the
+ordinary case in this domain: the same vendor console at a different host per credit union.
+An absolute URL makes that impossible without hand-editing the artifact, which defeats the
+point of having one.
+
+Found by a replay test that repointed `base_url` at a random port and watched the run navigate
+to port 8080 anyway. Fixing the recorder and recompiling from the stored transcript reproduced
+the committed 1.0.0 byte for byte apart from that field, which is the check that the fix
+changed one thing.
+
+Known weakness: only the prefix is stripped, so a discovery run that wandered onto a different
+host would still record an absolute URL for that step. The policy gate's `allowed_hosts` makes
+that hard to reach rather than impossible, and nothing currently rejects an artifact whose
+navigate step names a host.

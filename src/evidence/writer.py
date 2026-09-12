@@ -86,6 +86,17 @@ class EvidenceWriter:
         self._shots += 1
         return path
 
+    def snapshot(self, name: str, text: str) -> Path:
+        """Write a richer failure signal: a DOM dump or an aria snapshot.
+
+        Redacted like every other text write. Section 3.5 asks for at least one signal beyond
+        the log on failure, and a screenshot alone does not tell you which locator was being
+        looked for when it went wrong.
+        """
+        path = self.directory / f"{name}.txt"
+        path.write_text(self._redactor.redact(text))
+        return path
+
     def write_transcript(self, transcript: Any) -> Path:
         path = self.directory / "transcript.json"
         self._write_text(path, json.loads(transcript.model_dump_json()))

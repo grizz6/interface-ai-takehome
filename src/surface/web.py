@@ -78,11 +78,29 @@ class WebSurface:
         self._context = self._browser.new_context()
         self._page = self._context.new_page()
         self._last: Observation | None = None
+        # The application answering with a 500 is a different thing from a checkpoint that
+        # did not hold, and only the transport knows which happened. Playwright renders an
+        # error page like any other, so without this the two are indistinguishable.
+        self._last_status: int | None = None
+        self._page.on("response", self._remember_status)
 
     @property
     def page(self) -> Any:
         """The live page. For the operator handoff in phase 7, not for building locators."""
         return self._page
+
+    def _remember_status(self, response: Any) -> None:
+        if response.request.is_navigation_request() and response.frame is self._page.main_frame:
+            self._last_status = int(response.status)
+
+    @property
+    def last_status(self) -> int | None:
+        """HTTP status of the most recent main frame navigation, if there was one."""
+        return self._last_status
+
+    def dom_snapshot(self) -> str:
+        """Raw HTML, for evidence only. Never for locating anything."""
+        return str(self._page.content())
 
     # -- perception ----------------------------------------------------------
     def observe(self) -> Observation:

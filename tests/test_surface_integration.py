@@ -7,6 +7,7 @@ element is the only assertion that actually proves tier 3 picked the right one o
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -301,3 +302,31 @@ def test_text_relation_is_permitted_as_a_primary_but_css_is_not() -> None:
     with pytest.raises(ValidationError):
         LocatorBundle(primary=CssFallbackLocator(css="#x", note="only option"))
 
+
+
+def test_no_template_reaches_a_vocabulary_key_by_shadowed_dotted_access() -> None:
+    """Jinja resolves `v.labels.clear` to dict.clear, not to the label.
+
+    Found the hard way: the fault console's Clear control rendered as a bound method repr
+    and could not be found by its accessible name, so nothing could disarm a fault. Dotted
+    access is fine for every key that is not also a dict attribute, and subscript access is
+    always fine, so this checks the combination that actually breaks rather than banning
+    either one.
+    """
+    import re
+    import sys
+
+    sys.path.insert(0, "target_app")
+    from seed import VARIANTS
+
+    shadowed = set(dir(dict))
+    groups = {group for variant in VARIANTS.values() for group in variant}
+    pattern = re.compile(r"\bv\.(" + "|".join(sorted(groups)) + r")\.([A-Za-z_][A-Za-z0-9_]*)")
+
+    offenders = [
+        f"{path.name}: v.{group}.{key}"
+        for path in sorted(Path("target_app/templates").glob("*.html"))
+        for group, key in pattern.findall(path.read_text())
+        if key in shadowed
+    ]
+    assert not offenders, f"use subscript access for these: {offenders}"

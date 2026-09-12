@@ -164,7 +164,8 @@ def test_a_navigate_url_containing_the_value_becomes_a_template() -> None:
     out = compile_capability(transcript(events=events), POLICY)
     assert out.capability is not None
     navigate = next(s for s in out.capability.steps if s.action == "navigate")
-    assert navigate.url == "http://localhost:8080/member/{member_id}"
+    # A path, not a URL: the host lives on the surface descriptor so a caller can repoint it.
+    assert navigate.url == "/member/{member_id}"
 
 
 def test_an_unbound_literal_is_reported_without_printing_its_value() -> None:
@@ -294,3 +295,22 @@ def test_the_real_compiled_capability_leaks_neither_ref_nor_member_id() -> None:
     for ref in refs:
         assert not re.search(rf"\b{re.escape(ref)}\b", blob), ref
     assert "100001" not in blob, "the pii value survived into the artifact"
+
+
+def test_a_navigate_step_never_carries_the_recorded_host() -> None:
+    """An absolute URL pins the artifact to the machine that recorded it.
+
+    The same application at another host, port or tenant subdomain is exactly the case the
+    brief calls heterogeneity, and a baked in host makes it unreachable without editing the
+    artifact by hand.
+    """
+    events = [
+        TranscriptEvent(
+            seq=1, at=datetime(2026, 9, 12, tzinfo=UTC), kind=EventKind.OBSERVATION,
+            payload={"url": "http://localhost:8080/"},
+        )
+    ]
+    out = compile_capability(transcript(events=events), POLICY)
+    assert out.capability is not None
+    for step in out.capability.steps:
+        assert step.url is None or step.url.startswith("/"), step.url

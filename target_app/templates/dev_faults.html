@@ -24,7 +24,7 @@
         <td>
           <form method="post" action="{{ url_for('dev_faults_arm') }}">
             <input type="hidden" name="fault" value="clear">
-            <input type="submit" class="btn" value="{{ v.labels.clear }}">
+            <input type="submit" class="btn" value="{{ v.labels['clear'] }}">
           </form>
         </td>
       </tr>

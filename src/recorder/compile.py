@@ -273,6 +273,21 @@ def _templated(text: str, bound: dict[str, str]) -> str:
     return text
 
 
+def _relative_to_surface(url: str, base_url: str) -> str:
+    """Strip the recorded host, leaving the path the step actually means.
+
+    A navigate step that carries "http://localhost:8080/" pins the artifact to the machine
+    it was recorded on. The same application at a different host, port or tenant subdomain
+    is the case the brief calls heterogeneity, and an absolute URL makes it unreachable
+    without editing the artifact. The host belongs to the surface descriptor, which a
+    caller can repoint; the step keeps only the part that is about the flow.
+    """
+    base = base_url.rstrip("/")
+    if base and url.startswith(base):
+        return url[len(base):] or "/"
+    return url
+
+
 def _wait_for(action: ActionRecord, median_ms: int) -> WaitSpec:
     """A load wait, widened only for the step that actually needed longer."""
     timeout = DEFAULT_WAIT_MS
@@ -386,7 +401,7 @@ def compile_capability(
         if kind is ActionType.NAVIGATE:
             urls = _observation_urls(transcript)
             raw = urls[0] if urls else transcript.surface.base_url
-            url = _templated(raw, bound)
+            url = _templated(_relative_to_surface(raw, transcript.surface.base_url), bound)
 
         postcondition: Assertion | None = None
         if risk is RiskClass.RISKY_IRREVERSIBLE:
