@@ -98,22 +98,23 @@ def test_a_full_transcript_translates_to_input_items() -> None:
     ]
     payload = to_input_payload(messages)
 
-    assert [item["type"] for item in payload] == [
-        "text",
-        "text",
-        "function_call",
-        "function_result",
-    ]
-    assert payload[2]["id"] == "c1"
-    assert payload[3]["call_id"] == "c1"
-    assert payload[3]["result"] == [{"type": "text", "text": "ok"}]
+    # user turns are wrapped in the user_input envelope, because text is a content part
+    # rather than a top level input item. The model turn contributes nothing: the server
+    # holds the assistant side and rejects it as input. See DECISIONS 0018.
+    assert [item["type"] for item in payload] == ["user_input", "function_result"]
+    assert payload[0]["content"] == [{"type": "text", "text": "look up member 100001"}]
+    assert payload[1]["call_id"] == "c1"
+    assert payload[1]["result"] == [{"type": "text", "text": "ok"}]
 
 
 def test_a_tool_error_result_is_marked_as_one() -> None:
     payload = to_input_payload(
         [ToolResultMessage(call_id="c1", name="click", content="boom", is_error=True)]
     )
-    assert payload[0]["is_error"] is True
+    # The input shape carries no is_error field, so the failure is marked in the text the
+    # model actually reads rather than in a field the API would reject.
+    assert "is_error" not in payload[0]
+    assert payload[0]["result"] == [{"type": "text", "text": "ERROR: boom"}]
 
 
 class _FakeStep:

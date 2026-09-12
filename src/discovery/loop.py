@@ -126,6 +126,7 @@ class DiscoveryRun:
         evidence: EvidenceRef,
         model: str,
         surface_descriptor: SurfaceDescriptor,
+        target: str | None = None,
         limits: DiscoveryLimits | None = None,
         tools: list[ToolSpec] | None = None,
         on_observation: Any | None = None,
@@ -133,6 +134,7 @@ class DiscoveryRun:
         # A callback rather than an EvidenceWriter, so the loop stays unaware of what
         # evidence is and the dependency points one way only.
         self._on_observation = on_observation
+        self.target = target
         self.goal = goal
         self.surface = surface
         self.client = client
@@ -248,6 +250,19 @@ class DiscoveryRun:
         return DiscoveryOutcome(result=result, transcript=self.transcript)
 
     def _drive(self) -> None:
+        # Start where the caller said to start. Without this the model opens on about:blank
+        # with no idea where the application lives, and its only option is to guess a URL,
+        # which the policy gate then correctly refuses. The brief takes a goal AND an entry
+        # point; this is the entry point being used.
+        if self.target:
+            self._act(
+                NavigateAction(url=self.target),
+                kind=ActionType.NAVIGATE,
+                ref=None,
+                bundle=None,
+                literal=None,
+            )
+
         for _step in range(self.limits.max_steps):
             self._check_clock()
             observation = self._observe()
@@ -426,7 +441,8 @@ class DiscoveryRun:
         try:
             outcome = self.surface.act(action)
         except PolicyViolation as exc:
-            return self._refused(exc, kind)
+            attempted = getattr(action, "url", None)
+            return self._refused(exc, kind, attempted)
         except LocatorAmbiguous as exc:
             raise self._escalate(StuckReason.LOCATOR_AMBIGUOUS, str(exc)) from exc
         except LocatorUnresolved as exc:
@@ -458,7 +474,9 @@ class DiscoveryRun:
         strategy = outcome.resolved_strategy or "n/a"
         return f"Done. The control was found by {strategy}. Look to see the result.", False
 
-    def _refused(self, exc: PolicyViolation, kind: ActionType) -> tuple[str, bool]:
+    def _refused(
+        self, exc: PolicyViolation, kind: ActionType, attempted: str | None = None
+    ) -> tuple[str, bool]:
         """Name the rule, never the allowlist.
 
         The model is told the direction is closed and which rule closed it. It is not told
@@ -467,7 +485,12 @@ class DiscoveryRun:
         """
         self._consecutive_blocks += 1
         self._last_block = (exc.rule, kind)
-        self._event(EventKind.POLICY_BLOCK, rule=exc.rule, action=kind.value)
+        self._event(
+            EventKind.POLICY_BLOCK,
+            rule=exc.rule,
+            action=kind.value,
+            attempted=attempted,
+        )
 
         if self._consecutive_blocks >= self.limits.max_consecutive_blocks:
             raise _Stop(
@@ -564,6 +587,7 @@ def run_discovery(
     evidence: EvidenceRef,
     model: str,
     surface_descriptor: SurfaceDescriptor,
+    target: str | None = None,
     limits: DiscoveryLimits | None = None,
     tools: list[ToolSpec] | None = None,
     on_observation: Any | None = None,
@@ -576,6 +600,7 @@ def run_discovery(
         evidence=evidence,
         model=model,
         surface_descriptor=surface_descriptor,
+        target=target,
         limits=limits,
         tools=tools,
         on_observation=on_observation,

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import random
+import re
 import time
 from enum import StrEnum
 from typing import Annotated, Any, Literal, Protocol, runtime_checkable
@@ -161,39 +162,43 @@ def to_input_payload(messages: list[Message]) -> list[dict[str, Any]]:
 
     The whole transcript goes in every request, because this client runs stateless. See
     DECISIONS.md 0008 for why the server side conversation store is deliberately unused.
+
+    SHAPE, and it is not the obvious one. `text` and `image` are CONTENT PARTS, not top level
+    input items. A single bare text is accepted as a convenience, which is exactly why a one
+    shot call works and a conversation does not, but history has to wrap its parts in the
+    `user_input` and `model_output` envelopes. Getting this wrong returns a 400 naming the
+    trailing item, which points at the wrong place entirely. See DECISIONS.md 0018.
     """
     payload: list[dict[str, Any]] = []
     for message in messages:
         if message.role == "user":
-            payload.append({"type": "text", "text": message.text})
+            content: list[dict[str, Any]] = [{"type": "text", "text": message.text}]
             if message.image_png is not None:
-                payload.append(
+                content.append(
                     {
                         "type": "image",
                         "mime_type": "image/png",
                         "data": base64.b64encode(message.image_png).decode(),
                     }
                 )
+            payload.append({"type": "user_input", "content": content})
         elif message.role == "model":
-            if message.text:
-                payload.append({"type": "text", "text": message.text})
-            for call in message.tool_calls:
-                payload.append(
-                    {
-                        "type": "function_call",
-                        "id": call.id,
-                        "name": call.name,
-                        "arguments": call.arguments,
-                    }
-                )
+            # Deliberately contributes nothing. The assistant side of the conversation lives
+            # on the server, reached by previous_interaction_id, and the API rejects both
+            # model_output and function_call as input items. Sending the model its own turn
+            # back is neither possible nor necessary. It stays in our transcript regardless,
+            # which is the copy that matters.
+            continue
         else:
+            # No is_error field: the input shape does not carry one, so a failure is marked
+            # in the text the model actually reads.
+            text = f"ERROR: {message.content}" if message.is_error else message.content
             payload.append(
                 {
                     "type": "function_result",
                     "name": message.name,
                     "call_id": message.call_id,
-                    "is_error": message.is_error,
-                    "result": [{"type": "text", "text": message.content}],
+                    "result": [{"type": "text", "text": text}],
                 }
             )
     return payload
@@ -231,6 +236,24 @@ def to_model_turn(interaction: Any) -> ModelTurn:
     )
 
 
+TRANSIENT_STATUSES = frozenset({429, 500, 502, 503, 504})
+"""Provider side conditions worth waiting out rather than failing the run over.
+
+429 is the free tier ceiling. The 5xx family is the provider having a bad minute. Neither
+says anything about whether the goal is achievable, so neither should end a discovery run
+that may be twenty steps in.
+"""
+
+
+def _status_code(exc: Exception) -> int | None:
+    """The HTTP status behind an SDK exception, whichever hierarchy it came from."""
+    for attribute in ("status_code", "code"):
+        value = getattr(exc, attribute, None)
+        if isinstance(value, int):
+            return value
+    return None
+
+
 class GeminiClient:
     """The real client. Constructed with a model string and nothing else."""
 
@@ -247,6 +270,9 @@ class GeminiClient:
         self._base_backoff_s = base_backoff_s
         self._max_backoff_s = max_backoff_s
         self._client: Any | None = None
+        # Server side continuation state. See the complete() docstring and DECISIONS 0018.
+        self._previous_id: str | None = None
+        self._sent = 0
 
     def _ensure_client(self) -> Any:
         """Imported and constructed lazily, so importing this module needs no key."""
@@ -261,34 +287,66 @@ class GeminiClient:
     def complete(
         self, system: str, messages: list[Message], tools: list[ToolSpec]
     ) -> ModelTurn:
-        from google.genai import errors
+        """Continue the interaction on the server, sending only what is new.
 
+        This is not what DECISIONS 0008 chose and the reason is evidence rather than
+        preference. The Interactions API does not accept `model_output` or `function_call`
+        as input items, so a tool calling conversation cannot be replayed statelessly: only
+        the server can hold the assistant side of it. Each call therefore sends the messages
+        added since the last one and carries `previous_interaction_id` forward.
+
+        The local transcript is unaffected. We still own it, it is still what the recorder
+        compiles, and it is still what lands in evidence. What moved to the server is the
+        model's own view of the conversation, not our record of it.
+        """
         client = self._ensure_client()
+        fresh = messages[self._sent :] if self._previous_id else messages
         request: dict[str, Any] = {
             "model": self._model,
-            "input": to_input_payload(messages),
+            "input": to_input_payload(fresh),
             "system_instruction": system,
-            # Stateless. The transcript is ours, held locally, and goes up in full each turn.
-            "store": False,
         }
+        if self._previous_id is not None:
+            request["previous_interaction_id"] = self._previous_id
         if tools:
             request["tools"] = to_tool_payload(tools)
 
         last: Exception | None = None
         for attempt in range(self._max_attempts):
             try:
-                return to_model_turn(client.interactions.create(**request))
-            except errors.APIError as exc:
-                if getattr(exc, "code", None) != 429:
+                interaction = client.interactions.create(**request)
+            except Exception as exc:
+                # Matched on status code rather than on an exception class. The SDK raises
+                # from two unrelated hierarchies: google.genai.errors.APIError and an
+                # internal compat_errors tree, and both rate limits and 5xx arrive as the
+                # latter. An earlier version caught only the former, so the backoff below
+                # had never once run. Anything not transient is re-raised untouched.
+                if _status_code(exc) not in TRANSIENT_STATUSES:
                     raise
                 last = exc
                 if attempt == self._max_attempts - 1:
                     break
-                time.sleep(self._backoff_for(attempt))
+                time.sleep(self._retry_after(exc, attempt))
+                continue
+            self._previous_id = getattr(interaction, "id", None)
+            self._sent = len(messages)
+            return to_model_turn(interaction)
         raise RuntimeError(
-            f"Gemini rate limited this request {self._max_attempts} times. The free tier "
-            f"allows roughly ten requests a minute and a long run brushes it: {last}"
+            f"Gemini returned a transient error {self._max_attempts} times in a row. The "
+            f"free tier ceiling and provider 5xx both land here, and a long run brushes "
+            f"both: {last}"
         )
+
+    def _retry_after(self, exc: Exception, attempt: int) -> float:
+        """Honour the delay the server asks for, falling back to our own backoff.
+
+        A 429 usually carries "Please retry in 38.9s". Guessing shorter than that just
+        earns another 429 and burns another request against the same quota.
+        """
+        match = re.search(r"retry in ([0-9.]+)s", str(exc))
+        if match:
+            return min(float(match.group(1)) + 1.0, self._max_backoff_s * 2)
+        return self._backoff_for(attempt)
 
     def _backoff_for(self, attempt: int) -> float:
         """Exponential with jitter. Jitter matters because a stalled loop retries in lockstep."""

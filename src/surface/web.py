@@ -137,6 +137,19 @@ class WebSurface:
         candidates.extend(tier4)
 
         verified = self._verify(candidates, element.frame_path)
+        if candidates and not verified:
+            # Every tier produced a candidate and not one of them matched on the live page.
+            # That is never a locator problem, it is a page problem: what is on screen is
+            # not what the observation described. Record both sides, because an escalation
+            # that cannot say what it saw is an escalation nobody can act on.
+            counts = ", ".join(
+                f"{c.strategy}={self._live_count(c, element.frame_path)}" for c in candidates
+            )
+            failures.append(
+                f"every tier produced a candidate and none resolved on the live page "
+                f"(match counts: {counts}); the page is now at {self._page.url!r} while the "
+                f"observation was taken at {observation.url!r}"
+            )
         tier5 = self._tier_css(element, verified, failures)
         if tier5 is not None:
             verified.append(tier5)
@@ -296,6 +309,16 @@ class WebSurface:
                 + ("; ".join(failures) or "no reason recorded")
             ),
         )
+
+    def _live_count(self, spec: LocatorSpec, frame_path: list[str]) -> int | str:
+        """How many elements a tier matches right now. For diagnostics, never for control."""
+        try:
+            built = build(frame_scope(self._page, frame_path), spec)
+            if built.guard is not None and built.guard.count() != 1:
+                return f"container x{built.guard.count()}"
+            return int(built.target.count())
+        except (ValueError, RuntimeError) as exc:
+            return f"error: {type(exc).__name__}"
 
     def _verify(
         self, specs: list[LocatorSpec], frame_path: list[str]

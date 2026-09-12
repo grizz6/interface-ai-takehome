@@ -31,7 +31,9 @@ from src.policy.loading import DEFAULT_POLICY_PATH, PolicyConfigError, load_poli
 from src.policy.redaction import Redactor
 from src.surface.web import WebSurface
 
-DEFAULT_MODEL = "gemini-3-flash-preview"
+# gemini-3-flash-preview caps the free tier at 20 requests, which a 25 step run
+# exhausts before it finishes. This one has the headroom to complete a run.
+DEFAULT_MODEL = "gemini-3.6-flash"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -109,6 +111,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
             evidence=writer.ref,
             model="scripted" if args.dry_run else args.model,
             surface_descriptor=_descriptor(args.target),
+            target=args.target,
             limits=DiscoveryLimits(max_steps=args.max_steps, wall_clock_s=args.timeout),
             on_observation=lambda obs: (
                 writer.screenshot(obs.screenshot_png) if obs.screenshot_png else None
