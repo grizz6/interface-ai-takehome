@@ -148,8 +148,9 @@ in the quietest way: the control is still there doing the same thing, and the lo
 matches because someone renamed it (0007). Two mitigations exist and neither is built:
 `step_overrides` handles it once discovered, and because the winning tier is recorded every run, a
 fleet-wide report of text primaries is the first place to look when a tenant upgrade breaks a batch.
-Plainly, no capability has been recorded against variant B, so the override mechanism is schema and
-validation rather than a demonstrated path.
+Plainly: variant B was never built. `seed.py` defines one variant, so the override mechanism is
+schema and validation with nothing to point at, and everything above about multi-tenant is an
+argument rather than a demonstration.
 
 ## Escalation and handoff
 

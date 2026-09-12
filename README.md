@@ -240,7 +240,7 @@ JSON and so a related code can be added later without renumbering.
 | `src/replay/` | The deterministic executor, pre-flight checks, resume semantics. Imports no model client |
 | `src/escalation/` | `ControlLease`, `Session`, the intervention store, the page recorder, the operator console |
 | `src/evidence/` | The single evidence writer, run metadata, failure artifacts, the run index |
-| `target_app/` | The stand-in legacy application, variant A and variant B |
+| `target_app/` | The stand-in legacy application. Variant A only; see the note on multi-tenant below |
 | `capabilities/` | Saved capability artifacts |
 | `evidence/` | Per-run evidence directories. `evidence/curated/` is the tracked deliverable |
 | `interventions/` | Open and resolved handoff requests, plus the control lease file |
@@ -281,9 +281,12 @@ the artifact schema changing. That claim is architectural, and it is argued rath
 demonstrated.
 
 **Multi-tenant support is a `variant_id` and an `overrides` map, and nothing more.** No tenant
-registry, no per-tenant deployment plumbing, no fleet rollout tooling. Variant B of the target
-app exists and differs in branding, labels and one extra confirmation step, so the override
-mechanism has something real to point at, but no capability has been recorded against it.
+registry, no per-tenant deployment plumbing, no fleet rollout tooling. **Variant B of the target
+app was never built.** `seed.py` defines one variant, `a`, and every user-visible string is read
+from it, so a second tenant would be a config entry rather than a forked template. But it is a
+config entry nobody has written: starting the app with `VARIANT=b` raises `KeyError: 'b'` on
+every request. The override machinery in the schema is therefore validated and unexercised, and
+the heterogeneity argument in `REPORT.md` is an argument rather than a demonstration.
 
 Two further cuts worth naming because they are absences rather than stubs: replay has no
 assisted LLM fallback when a locator fails, and multi-run stability across many replays has not

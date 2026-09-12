@@ -4,7 +4,8 @@
 # does not have this project's dependencies, so `make app` in a fresh clone failed.
 PY := .venv/bin/python
 
-# run the local target app (variant A on 8080, variant B on 8081)
+# run the local target app. Variant A only: seed.py defines no variant b, so VARIANT=b
+# raises KeyError on every request. PORT and VARIANT are still read from the environment.
 app:
 	$(PY) target_app/app.py
 
