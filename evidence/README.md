@@ -58,6 +58,25 @@ timing realism; what it keeps is that the click went through the raw page and to
 `intervention.json` in that directory is the handoff packet as the console saw it, including
 the resolution and the captured human actions.
 
+## Provenance caveats
+
+**The commit hashes are approximate.** Runs 03 to 06 were produced from a working tree with
+uncommitted changes, so their `meta.json` records `git_commit` as
+`386bdd97cf8706cbc9394b019054ef45b38409f1-dirty`. That names the nearest commit, not the exact code
+that ran: phase 9 changes, the driver script among them, were still uncommitted at the time. They have not
+been regenerated for this alone, because a regenerated run is a different run, and these ones are
+what the README, the index and the credential sweep were checked against.
+
+**02-replay-success is the exception.** It was regenerated from a clean tree at `7ac0ff9`, so its
+hash is exact, and it is the only run recording `allow_draft`. Runs 03 to 06 predate that field.
+All of them replayed draft capabilities with `--allow-draft` passed, which the regeneration
+commands below show; without the flag the draft gate refuses the run at pre-flight with exit 40.
+
+**01-discovery-real predates the phase 8 evidence writer**, so it has no `meta.json` at all and the
+index shows its kind as `unknown`. It was preserved rather than regenerated because reproducing it
+would cost a model API call, and the key it was produced with has since been revoked. A
+reproduction would also not be the same run: the model is not deterministic.
+
 ## Directory shape
 
 ```

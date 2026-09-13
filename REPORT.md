@@ -271,7 +271,7 @@ every replay uses `--allow-draft`, so the gate is a speed bump rather than a con
 also closes the sharpest schema hole, a parameter declared with the wrong type passing every
 validator and surfacing on the first real replay (0026, 0014). Second, checkpoint discrimination,
 since a model picking a string present on every page gets a checkpoint that passes verification and
-every future replay regardless of where the flow ended (0013). Third, record a capability against
-variant B, turning the heterogeneity claim from argued into demonstrated. Fourth, aria snapshots as
+every future replay regardless of where the flow ended (0013). Third, build variant B of the target app and
+record a capability against it, turning the heterogeneity claim from argued into demonstrated. Fourth, aria snapshots as
 the primary visual record, the posture the safety section recommends and does not implement. Fifth,
 `extract_after_step` on `OutputSpec`, the narrowest real gap in the schema (0003).

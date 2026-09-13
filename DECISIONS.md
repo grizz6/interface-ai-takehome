@@ -1359,3 +1359,62 @@ Worth recording how it was found. Phase 7 had a test asserting no typed value re
 captured actions, and it passed, because it only checked the values a human typed. The url was
 not typed by anyone, it was ambient. A sweep that walks every byte of a finished run found in
 one pass what a targeted assertion missed, which is the argument for having both.
+
+## 0042. invariant tests read the curated evidence, and never skip
+
+Final polish.
+
+`tests/test_evidence_invariants.py` reads `evidence/curated/*/transcript.json`. It used to glob
+`evidence/*/transcript.json` and skip when that matched nothing, which in a clean clone is always,
+because the curated transcripts sit one level deeper. Invariant 9 checked against a real model was
+therefore unchecked for everyone except the machine that made the runs.
+
+A skip is not neutral here. A green suite with two skipped invariant tests reads as "the invariant
+holds" when it means "nobody looked". So the tests read tracked data, a guard test fails if that
+data is missing rather than letting an empty parameter set skip silently, and a run that used no
+refs passes vacuously instead of skipping, since nothing about it went unchecked.
+
+Rejected: keep reading `evidence/` so developer runs are checked too. That makes the result of
+the suite depend on whatever someone ran last, and it is what produced the phase 11a failure where
+following the README's own dry run turned the suite red.
+
+Known weakness: only one curated run has a transcript, so invariant 9 is checked against exactly
+one real model run.
+
+## 0043. allow_draft is recorded, by the caller and by the engine
+
+Final polish.
+
+A replay of a draft capability is legitimate only with `--allow-draft`, and the curated evidence
+contained replays of drafts with nothing saying which kind of run they were. The gate was checked,
+not assumed: the same command without the flag exits 40 at pre-flight with no step run.
+
+`meta.json` records `allow_draft` from the caller, and the engine's `preflight` event records the
+value it actually honoured. Two records because meta is written by whoever constructs the writer,
+while the event comes from the code that made the decision, and evidence that rests only on the
+caller's account of itself is the weaker kind.
+
+Known weakness: runs 03 to 06 predate the field and were not regenerated, so only 02 carries it.
+evidence/README.md says so.
+
+## 0044. the capability catalog reads, and invocation stays in replay
+
+Final polish. The brief's first stretch goal.
+
+`src/catalog.py` and two commands, `catalog list` and `catalog describe <id>`. The typed contract
+it prints is the artifact schema read back: inputs with type and sensitivity, outputs, declared
+business outcomes, which steps need human approval, the exit codes, and the exact command that
+invokes it. Every artifact is validated on load, and an invalid one is an error naming the file,
+because an agent told a capability does not exist when it is merely broken routes around a fault
+nobody knows about. Versions order semantically, so 1.10.0 is not handed out as older than 1.2.0.
+
+Rejected: a `catalog invoke` command. It would be a second way to run a capability, with its own
+argument handling to keep in step with `replay`. `describe` prints the `replay` line instead, so
+there is one execution path and the catalog never writes anything.
+
+Rejected: an HTTP endpoint. Section 8 rules out servers built ahead of need, and the contract a
+service would expose is the one already printed here.
+
+Known weakness: the invoke line assumes the repository layout, `.venv/bin/python` from the root,
+because that is how every README command runs. An agent in a different environment has to adapt
+it, and nothing checks the placeholders it fills in against the declared types before the run.

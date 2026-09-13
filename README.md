@@ -229,6 +229,86 @@ not the report.
 Without `--lease-path` the run holds an in-process lease and a stopping condition ends the run
 with exit 20 instead of waiting for anyone.
 
+## Agent-facing capability interface
+
+The capability catalog is how a calling agent learns what it can invoke and exactly what each
+capability accepts and returns, without reading artifact JSON. Two read-only commands, no server.
+Add `--json` to either for machine-readable output. With the target app running:
+
+```bash
+.venv/bin/python -m src.cli catalog list
+```
+
+```
+lookup-member-savings-balance 1.0.0 [draft]
+  Look up a member by ID and read their current savings balance.
+  in:  member_id: string
+  out: savings_balance: currency
+lookup-member-savings-balance 1.1.0 [draft]
+  Look up a member by ID and read their current savings balance.
+  in:  member_id: string
+  out: savings_balance: currency
+lookup-member-savings-balance 1.2.0 [draft]
+  Look up a member by ID and read their current savings balance.
+  in:  member_id: string
+  out: savings_balance: currency
+open-member-subaccount 1.0.0 [draft]
+  Opens a deposit sub-account against an existing member relationship.
+  in:  member_id: string, account_type: string, nickname: string, initial_deposit: currency
+  out: new_account_number: string
+```
+
+```bash
+.venv/bin/python -m src.cli catalog describe lookup-member-savings-balance
+```
+
+```
+lookup-member-savings-balance 1.2.0 [draft]
+  lookup-member-savings-balance: Look up a member by ID and read their current savings balance.
+  file:    capabilities/lookup-member-savings-balance-1.2.0.json
+  surface: legacy_web localhost variant (unspecified)
+
+inputs
+  member_id: string (required, sensitivity pii)
+      Member ID to look up
+outputs
+  savings_balance: currency (sensitivity none)
+      Current savings account balance
+business outcomes, returned with exit 10 and never raised
+  member_not_found  No member record matches the supplied member id.
+  member_restricted  The member record exists but this operator may not view it.
+success means
+  Look up a member by ID and read their current savings balance.
+requires human approval before
+  nothing: no step is irreversible
+exit codes
+  success 0, business_outcome 10, needs_human 20, policy_blocked 30, failure 40
+invoke
+  .venv/bin/python -m src.cli replay --capability capabilities/lookup-member-savings-balance-1.2.0.json --params '{"member_id": "<string>"}' --allow-draft
+```
+
+`describe` picks the highest version unless `--version` is given. `member_id` is `pii`, and the
+schema forbids a sensitive input from carrying an example, so the invoke line holds a typed
+placeholder rather than a value. Filling it in and running that line is the invocation:
+
+```bash
+.venv/bin/python -m src.cli replay --capability capabilities/lookup-member-savings-balance-1.2.0.json --params '{"member_id": "100001"}' --allow-draft --redact 100001
+```
+
+```
+evidence/20260913-005333-2be9
+exit: 0
+```
+
+```
+$ .venv/bin/python -c "import json; r = json.load(open('evidence/20260913-005333-2be9/result.json')); print(r['kind'], r['outputs'], [s['locator_strategy_used'] for s in r['steps']])"
+success {'savings_balance': 4182.55} [None, 'role_name', 'role_name', 'role_name']
+```
+
+Invocation is the existing `replay` command rather than a third catalog command, so there is
+exactly one execution path and the catalog only ever reads. The run directory name will differ on
+your machine.
+
 ## Exit codes
 
 One code per result kind, spaced by ten so a caller can branch on the decade without parsing
@@ -254,6 +334,7 @@ traceback instead.
 | `src/discovery/` | The model loop, tool schemas, the system prompt, the transcript, stopping conditions, the `ModelClient` seam |
 | `src/recorder/` | Compiles a transcript into a `Capability` |
 | `src/replay/` | The deterministic executor, pre-flight checks, resume semantics. Imports no model client |
+| `src/catalog.py` | The capability catalog: `catalog list` and `catalog describe`, read-only over `capabilities/` |
 | `src/escalation/` | `ControlLease`, `Session`, the intervention store, the page recorder, the operator console |
 | `src/evidence/` | The single evidence writer, run metadata, failure artifacts, the run index |
 | `target_app/` | The stand-in legacy application. Variant A only; see the note on multi-tenant below |

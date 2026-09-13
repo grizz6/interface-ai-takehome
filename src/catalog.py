@@ -101,7 +101,7 @@ def _invocation(entry: Entry) -> str:
     params = {p.name: p.example if p.example is not None else f"<{p.type.value}>" for p in cap.inputs}
     draft = " --allow-draft" if cap.status is ApprovalStatus.DRAFT else ""
     return (
-        f"python -m src.cli replay --capability {entry.path} "
+        f".venv/bin/python -m src.cli replay --capability {entry.path} "
         f"--params '{json.dumps(params)}'{draft}"
     )
 
@@ -190,7 +190,9 @@ def render_contract(spec: dict[str, Any]) -> str:
         lines.append(f"  {o['code']}  {o['description']}".rstrip())
     lines.append(f"success means\n  {spec['success_means']}")
     lines.append("requires human approval before")
-    for s in spec["requires_human_approval"] or [{"step_index": "-", "description": "(no irreversible step)"}]:
+    if not spec["requires_human_approval"]:
+        lines.append("  nothing: no step is irreversible")
+    for s in spec["requires_human_approval"]:
         lines.append(f"  step {s['step_index']}: {s['description']}")
     codes = ", ".join(f"{k} {v}" for k, v in spec["exit_codes"].items())
     lines.append(f"exit codes\n  {codes}")
