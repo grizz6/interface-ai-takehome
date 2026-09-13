@@ -60,28 +60,21 @@ the resolution and the captured human actions.
 
 ## Provenance caveats
 
-**The commit ids inside meta.json are from before the commit messages were reworded.** Every
-commit message in this repository was later rewritten in plainer language. That changed every
-commit id but not a single file, so each commit still holds exactly the same code. The evidence
-files were not edited to match, because evidence is only ever written by a real run. Use this
-table to find the commit a run names:
+**Runs 02 to 06 record an exact commit.** Each was produced from a clean working tree, so the
+`git_commit` in its `meta.json` names the code that ran, with no `-dirty` suffix. Each also records
+`allow_draft: true`, in `meta.json` and in the engine's own `preflight` event: every one of them
+replays a capability that is still a draft, which only happens when `--allow-draft` is passed.
+Without the flag the draft gate refuses the run at pre-flight with exit 40.
 
-| recorded in meta.json | same commit today |
+**02-replay-success names a commit id from before the commit messages were reworded.** Every commit
+message in this repository was later rewritten in plainer language. That changed every commit id
+but not a single file, so the commit still holds exactly the same code. The evidence was not edited
+to match, because evidence is only ever written by a real run. Runs 03 to 06 were produced after
+the rewording and need no translation.
+
+| recorded in 02's meta.json | same commit today |
 | --- | --- |
-| `386bdd97cf8706cbc9394b019054ef45b38409f1` | `2c04c3e3641cddef63fde73e9eaedfc4988de982` |
 | `7ac0ff9d4312e3e16314132092b42c2682f8a268` | `275433536f048637660d5aca41b641c49a4e6a97` |
-
-**The commit ids for runs 03 to 06 are approximate.** They were produced from a working tree with
-uncommitted changes, so their `meta.json` records `git_commit` with a `-dirty` suffix. That names
-the nearest commit, not the exact code that ran: the changes from the stage that produced them,
-the driver script among them, were still uncommitted at the time. They have not been regenerated
-for this alone, because a regenerated run is a different run, and these ones are what the README,
-the index and the credential sweep were checked against.
-
-**02-replay-success is the exception.** It was regenerated from a clean tree, so its commit id is
-exact, and it is the only run recording `allow_draft`. Runs 03 to 06 predate that field. All of
-them replayed draft capabilities with `--allow-draft` passed, which the regeneration commands
-below show; without the flag the draft gate refuses the run at pre-flight with exit 40.
 
 **01-discovery-real predates the evidence writer that adds meta.json**, so it has none, and the
 index shows its kind as `unknown`. It was preserved rather than regenerated because reproducing it

@@ -1,8 +1,8 @@
 {
-  "id": "20260912-175143-03d1-s5-risky_action_requires_approval-175145",
-  "session_id": "20260912-175143-03d1",
-  "created_at": "2026-09-12T17:51:45.163751Z",
-  "deadline_at": "2026-09-12T17:56:45.163747Z",
+  "id": "20260913-013021-a9cb-s5-risky_action_requires_approval-013023",
+  "session_id": "20260913-013021-a9cb",
+  "created_at": "2026-09-13T01:30:23.485853Z",
+  "deadline_at": "2026-09-13T01:35:23.485846Z",
   "capability_id": "open-member-subaccount",
   "capability_version": "1.0.0",
   "goal_text": "open a <param:account_type> sub-account for member <param:member_id>",
@@ -13,7 +13,7 @@
   "why": "step 5 is risky_irreversible and the policy requires a human to approve it before it runs: Confirm. This opens the account and cannot be undone.",
   "url": "http://localhost:8080/member/<param:redacted_0>/subaccount",
   "aria_snapshot": "- table [ref=f2e2] [box=12,12,900,339]:\n  - rowgroup [ref=f2e3] [box=13,13,898,337]:\n    - row [ref=f2e4] [box=13,13,898,34]:\n      - cell [ref=f2e5] [box=13,13,898,34]:\n        - table [ref=f2e6] [box=23,21,878,18]:\n          - rowgroup [ref=f2e7] [box=23,21,878,18]:\n            - row [ref=f2e8] [box=23,21,878,18]:\n              - cell \"Cedar Ridge Credit Union\" [ref=f2e9] [box=23,21,545,18]\n              - cell \"Member Services Console\" [ref=f2e10] [box=568,21,333,18]\n    - row [ref=f2e11] [box=13,47,898,26]:\n      - cell [ref=f2e12] [box=13,47,898,26]:\n        - table [ref=f2e13] [box=19,51,145,17]:\n          - rowgroup [ref=f2e14] [box=19,51,145,17]:\n            - row [ref=f2e15] [box=19,51,145,17]:\n              - cell [ref=f2e16] [box=19,51,44,17]:\n                - link \"Home\" [ref=f2e17] [cursor=pointer] [box=19,53,32,13]:\n                  - /url: /\n              - cell [ref=f2e18] [box=63,51,100,17]:\n                - link \"Member Lookup\" [ref=f2e19] [cursor=pointer] [box=63,53,88,13]:\n                  - /url: /search\n    - row [ref=f2e20] [box=13,73,898,252]:\n      - cell [ref=f2e21] [box=13,73,898,252]:\n        - table [ref=f2e22] [box=25,85,874,228]:\n          - rowgroup [ref=f2e23] [box=26,86,872,226]:\n            - row [ref=f2e24] [box=26,86,872,26]:\n              - cell \"Review Sub-Account Request\" [ref=f2e25] [box=26,86,872,26]\n            - row [ref=f2e26] [box=26,112,872,200]:\n              - cell [ref=f2e27] [box=26,112,872,200]:\n                - paragraph [ref=f2e28] [box=36,133,852,13]: Review the request below and select Confirm to open the account.\n                - table [ref=f2e29] [box=36,157,215,126]:\n                  - rowgroup [ref=f2e30] [box=36,157,215,126]:\n                    - row [ref=f2e31] [box=36,157,215,21]:\n                      - cell \"Member Name\" [ref=f2e32] [box=36,157,133,21]\n                      - cell \"Marcus Webb\" [ref=f2e33] [box=169,157,81,21]\n                    - row [ref=f2e34] [box=36,178,215,21]:\n                      - cell \"Member ID\" [ref=f2e35] [box=36,178,133,21]\n                      - cell \"<param:redacted_0>\" [ref=f2e36] [box=169,178,81,21]\n                    - row [ref=f2e37] [box=36,199,215,21]:\n                      - cell \"Account Type\" [ref=f2e38] [box=36,199,133,21]\n                      - cell \"Savings\" [ref=f2e39] [box=169,199,81,21]\n                    - row [ref=f2e40] [box=36,220,215,21]:\n                      - cell \"Nickname\" [ref=f2e41] [box=36,220,133,21]\n                      - cell \"Vacation\" [ref=f2e42] [box=169,220,81,21]\n                    - row [ref=f2e43] [box=36,241,215,21]:\n                      - cell \"Initial Deposit\" [ref=f2e44] [box=36,241,133,21]\n                      - cell \"250.0\" [ref=f2e45] [box=169,241,81,21]\n                    - row [ref=f2e46] [box=36,262,215,21]:\n                      - cell \"Statement Delivery\" [ref=f2e47] [box=36,262,133,21]\n                      - cell \"Paperless\" [ref=f2e48] [box=169,262,81,21]\n                - button \"Confirm\" [ref=f2e50] [box=36,283,66,19]\n    - row [ref=f2e51] [box=13,325,898,25]:\n      - cell \"Internal system. Authorized staff only.\" [ref=f2e52] [box=13,325,898,25]",
-  "screenshot_path": "evidence/20260912-175143-03d1/screenshots/000.png",
+  "screenshot_path": "evidence/20260913-013021-a9cb/screenshots/000.png",
   "params_redacted": [
     {
       "name": "member_id",
@@ -42,7 +42,7 @@
   ],
   "resolution": {
     "outcome": "completed_manually",
-    "operator_note": "opened the sub-account by hand in the live session",
+    "operator_note": "opened it by hand",
     "human_actions": [
       {
         "kind": "navigate",
@@ -51,7 +51,7 @@
         "element_id": null,
         "field": null,
         "url": "http://localhost:8080/member/<param:redacted_0>/subaccount",
-        "at": "2026-09-12T17:51:45.166Z"
+        "at": "2026-09-13T01:30:23.491Z"
       },
       {
         "kind": "click",
@@ -60,7 +60,7 @@
         "element_id": "ctl00_ContentPlaceHolder1_btnConfirm",
         "field": null,
         "url": "http://localhost:8080/member/<param:redacted_0>/subaccount",
-        "at": "2026-09-12T17:51:45.787Z"
+        "at": "2026-09-13T01:30:24.116Z"
       },
       {
         "kind": "navigate",
@@ -69,11 +69,11 @@
         "element_id": null,
         "field": null,
         "url": "http://localhost:8080/member/<param:redacted_0>/subaccount/confirm",
-        "at": "2026-09-12T17:51:45.801Z"
+        "at": "2026-09-13T01:30:24.128Z"
       }
     ],
     "url_after": "http://localhost:8080/member/<param:redacted_0>/subaccount/confirm",
     "aria_after": "- table [ref=f3e2] [box=12,12,900,348]:\n  - rowgroup [ref=f3e3] [box=13,13,898,346]:\n    - row [ref=f3e4] [box=13,13,898,34]:\n      - cell [ref=f3e5] [box=13,13,898,34]:\n        - table [ref=f3e6] [box=23,21,878,18]:\n          - rowgroup [ref=f3e7] [box=23,21,878,18]:\n            - row [ref=f3e8] [box=23,21,878,18]:\n              - cell \"Cedar Ridge Credit Union\" [ref=f3e9] [box=23,21,545,18]\n              - cell \"Member Services Console\" [ref=f3e10] [box=568,21,333,18]\n    - row [ref=f3e11] [box=13,47,898,26]:\n      - cell [ref=f3e12] [box=13,47,898,26]:\n        - table [ref=f3e13] [box=19,51,145,17]:\n          - rowgroup [ref=f3e14] [box=19,51,145,17]:\n            - row [ref=f3e15] [box=19,51,145,17]:\n              - cell [ref=f3e16] [box=19,51,44,17]:\n                - link \"Home\" [ref=f3e17] [cursor=pointer] [box=19,53,32,13]:\n                  - /url: /\n              - cell [ref=f3e18] [box=63,51,100,17]:\n                - link \"Member Lookup\" [ref=f3e19] [cursor=pointer] [box=63,53,88,13]:\n                  - /url: /search\n    - row [ref=f3e20] [box=13,73,898,261]:\n      - cell [ref=f3e21] [box=13,73,898,261]:\n        - table [ref=f3e22] [box=25,85,874,237]:\n          - rowgroup [ref=f3e23] [box=26,86,872,235]:\n            - row [ref=f3e24] [box=26,86,872,26]:\n              - cell \"Sub-Account Opened\" [ref=f3e25] [box=26,86,872,26]\n            - row [ref=f3e26] [box=26,112,872,209]:\n              - cell [ref=f3e27] [box=26,112,872,209]:\n                - table [ref=f3e28] [box=36,122,852,33]:\n                  - rowgroup [ref=f3e29] [box=38,124,848,29]:\n                    - row [ref=f3e30] [box=38,124,848,29]:\n                      - cell \"The sub-account has been opened.\" [ref=f3e31] [box=38,124,848,29]\n                - table [ref=f3e32] [box=36,165,267,111]:\n                  - rowgroup [ref=f3e33] [box=36,165,267,111]:\n                    - row [ref=f3e34] [box=36,165,267,27]:\n                      - cell \"New Account Number\" [ref=f3e35] [box=36,165,148,27]\n                      - cell \"900001001\" [ref=f3e36] [box=184,165,119,27]\n                    - row [ref=f3e37] [box=36,192,267,21]:\n                      - cell \"Member Name\" [ref=f3e38] [box=36,192,148,21]\n                      - cell \"Marcus Webb\" [ref=f3e39] [box=184,192,119,21]\n                    - row [ref=f3e40] [box=36,213,267,21]:\n                      - cell \"Account Type\" [ref=f3e41] [box=36,213,148,21]\n                      - cell \"Savings\" [ref=f3e42] [box=184,213,119,21]\n                    - row [ref=f3e43] [box=36,234,267,21]:\n                      - cell \"Nickname\" [ref=f3e44] [box=36,234,148,21]\n                      - cell \"Vacation\" [ref=f3e45] [box=184,234,119,21]\n                    - row [ref=f3e46] [box=36,255,267,21]:\n                      - cell \"Initial Deposit\" [ref=f3e47] [box=36,255,148,21]\n                      - cell \"250.0\" [ref=f3e48] [box=184,255,119,21]\n                - paragraph [ref=f3e49] [box=36,287,852,13]:\n                  - link \"Back to Member Detail\" [ref=f3e50] [cursor=pointer] [box=36,287,126,13]:\n                    - /url: /member/<param:redacted_0>\n    - row [ref=f3e51] [box=13,334,898,25]:\n      - cell \"Internal system. Authorized staff only.\" [ref=f3e52] [box=13,334,898,25]",
-    "resolved_at": "2026-09-12T17:52:16.797771Z"
+    "resolved_at": "2026-09-13T01:30:55.321608Z"
   }
 }

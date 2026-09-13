@@ -1,11 +1,11 @@
 {
-  "duration_ms": 195,
+  "duration_ms": 196,
   "evidence": {
-    "directory": "evidence/20260912-174801-34ae",
-    "log_path": "evidence/20260912-174801-34ae/run.jsonl",
-    "run_id": "20260912-174801-34ae",
+    "directory": "evidence/20260913-012942-76c4",
+    "log_path": "evidence/20260913-012942-76c4/run.jsonl",
+    "run_id": "20260913-012942-76c4",
     "screenshot_paths": [
-      "evidence/20260912-174801-34ae/screenshots/000.png"
+      "evidence/20260913-012942-76c4/screenshots/000.png"
     ]
   },
   "kind": "success",
@@ -20,7 +20,7 @@
       "action": "navigate",
       "attempt_count": 1,
       "description": "navigate",
-      "duration_ms": 10,
+      "duration_ms": 9,
       "index": 0,
       "locator_strategy_used": null,
       "recovered_by": null
@@ -29,7 +29,7 @@
       "action": "click",
       "attempt_count": 1,
       "description": "click",
-      "duration_ms": 21,
+      "duration_ms": 27,
       "index": 1,
       "locator_strategy_used": "role_name",
       "recovered_by": "dismiss_maintenance_interstitial"
@@ -38,7 +38,7 @@
       "action": "type",
       "attempt_count": 1,
       "description": "type <param:member_id>",
-      "duration_ms": 9,
+      "duration_ms": 5,
       "index": 2,
       "locator_strategy_used": "role_name",
       "recovered_by": "dismiss_maintenance_interstitial"
@@ -47,7 +47,7 @@
       "action": "click",
       "attempt_count": 1,
       "description": "click",
-      "duration_ms": 37,
+      "duration_ms": 41,
       "index": 3,
       "locator_strategy_used": "role_name",
       "recovered_by": "dismiss_maintenance_interstitial"

@@ -1,9 +1,10 @@
 {
+  "allow_draft": true,
   "capability_id": "open-member-subaccount",
   "capability_version": "1.0.0",
   "exit_code": 0,
-  "finished_at": "2026-09-12T17:52:17.016788Z",
-  "git_commit": "386bdd97cf8706cbc9394b019054ef45b38409f1-dirty",
+  "finished_at": "2026-09-13T01:30:55.553750Z",
+  "git_commit": "f20cad82cc052fd3fee43863a351cbf23af13ead",
   "kind": "replay",
   "model": null,
   "params_redacted": [
@@ -35,7 +36,7 @@
   "policy_path": "config/policy.json",
   "policy_sha256": "1ae61588b4e23052d024a62fa29b9d18ba56a6ac7a08071257f0e69f5707a44f",
   "result_kind": "success",
-  "run_id": "20260912-175143-03d1",
+  "run_id": "20260913-013021-a9cb",
   "schema_version": "1.0",
-  "started_at": "2026-09-12T17:51:43.179162Z"
+  "started_at": "2026-09-13T01:30:21.552226Z"
 }
