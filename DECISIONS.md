@@ -980,6 +980,14 @@ now exercised by a replay that would fail if the signal were wrong. The general 
 a hand-added declaration is unverified until something hits it, so it needs a test at the
 moment it is written, not later.
 
+**Update, final gap closure.** Curated run `07-replay-permission-denied` replays the lookup
+capability for the restricted member 100003 and returns `member_restricted` with exit 10, so the
+signal is now verified in the evidence a reviewer reads, not only inside the test suite.
+
+That confirms the lookup capability only. The same lesson was not applied to
+`open-member-subaccount-1.0.0.json`, which was hand-authored later with three outcomes of its
+own and no test for any of them. None of the three can fire. See 0045.
+
 ## 0028. navigate steps store a path, not a URL
 
 Phase 6.
@@ -1418,3 +1426,46 @@ service would expose is the one already printed here.
 Known weakness: the invoke line assumes the repository layout, `.venv/bin/python` from the root,
 because that is how every README command runs. An agent in a different environment has to adapt
 it, and nothing checks the placeholders it fills in against the declared types before the run.
+
+## 0045. two defects stop the sub-account capability's outcomes from ever firing
+
+Final gap closure. Found while producing curated run 08, and recorded rather than fixed.
+
+The sub-account capability declares `member_not_found`, `member_restricted` and
+`validation_rejected`. All three were written by hand and none was ever replayed. Producing run 08
+showed that none of them can fire.
+
+**The validation detect signal names text the application never shows.** It looks for "Correct
+the highlighted fields". The application's messages are field specific, such as "Initial deposit
+must be greater than zero.", and that phrase exists nowhere in the target app. This is exactly the
+weakness 0027 describes, repeated in a capability written after that entry.
+
+**A step's wait runs out before outcomes are checked.** Step 4 waits for "Review Sub-Account
+Request". A rejected form never shows it, so `act()` raises a timeout after ten seconds and the
+engine returns a `timeout` failure straight away. Recoveries and declared outcomes are only
+consulted once a step's action and wait have succeeded, so a correct detect signal would still not
+be read. The lookup capability escapes this only because its search step waits for the page load
+rather than for specific text. The ordering in 0023 puts outcomes before postconditions, but says
+nothing about wait timeouts, and that is the gap.
+
+**Pre-flight treats a business outcome screen as drift.** For a restricted or unknown member, the
+fingerprint check in 0034 loads the entry screen, gets an "Access Restricted" or not-found title
+instead of the recorded one, and stops with `surface_unavailable` before step 0. The two member
+outcomes in this capability check after step 0, so they can never be reached.
+
+Not fixed, because this round was limited to evidence and documentation, with no new
+behaviour. The fixes, for whoever takes this on:
+
+1. On a wait timeout, check the step's declared outcomes before classifying the timeout. That
+   keeps 0023's promise that an answer is never reported as a crash.
+2. Publish the capability as 1.1.0 with a detect signal that matches the real messages, for
+   instance a `text_present` pattern over the field error texts, and a test that replays it.
+3. Have the fingerprint check evaluate declared outcomes on the entry screen before calling a
+   mismatch drift, or skip the title comparison when an outcome signal already matches.
+
+Rejected: fix the signal alone and record run 08 as a success. It would still time out, and it
+would hide the more important defect, which is in the engine rather than in one artifact.
+
+Known weakness of recording it this way: the curated set now contains a run whose directory name
+describes the scenario while its result is a failure. `evidence/README.md` says so in the table
+and explains it underneath.

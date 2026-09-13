@@ -66,7 +66,10 @@ checkpoint too, so asking the postcondition first turns every not-found lookup i
 paged human, to deliver an answer the system already had. The brief names conflating the two as the
 most common mistake in this problem. They are checked after every step rather than at the end,
 because a flow can end early: the not-found screen appears at step 3 of 4 and step 4 would click a
-control that no longer exists. Five results carry distinct exit codes, `Success` 0,
+control that no longer exists. The ordering has one known hole, found while producing run 08: a
+step whose wait runs out returns a `timeout` before outcomes are ever checked, so a form the server
+rejects in the sub-account capability is reported as a failure, exit 40, instead of
+`validation_rejected`, exit 10 (0045). Five results carry distinct exit codes, `Success` 0,
 `BusinessOutcome` 10, `NeedsHuman` 20, `PolicyBlocked` 30 and `Failure` 40, spaced by ten so a
 caller branches on the decade without parsing JSON, and a recoverable condition never becomes a
 result kind but appears as `recoveries_applied` on a success.
@@ -262,16 +265,24 @@ the load bearing judgment at the moment there is least evidence and no human wat
 it properly means the fallback proposes and a human approves, which is the escalation path that
 already exists. Multi-run stability is unmeasured: two consecutive replays are asserted to produce
 identical step sequences and identical resolved tiers, which is determinism, but nothing runs a
-capability fifty times and reports a rate, and that is the weakest claim in this report. Each is a
+capability fifty times and reports a rate, and that is the weakest claim in this report. Session
+timeout is the one runtime condition from the brief's section 3.3 with no coverage at all: no
+declared outcome, no recovery rule and no run. The target app can already simulate it: armed from
+`/dev/faults`, it sends the next page load to a "Your session has expired" page. Handling it would
+be a recovery rule using `reauthenticate`, which the schema already defines and the replay engine
+does not yet implement. This app has nothing to sign in to, so the rule would return to the entry
+screen and start the flow again; a real one would sign in first. Either way it is only safe before
+any irreversible step has run. It was cut for time. Each is a
 cut rather than an omission because the brief is explicit that a thin but real version of every
 requirement beats a polished subset, and each bought time for a requirement that is thin but real.
 
-Next, in order. First, the draft to approved promotion path, since every capability is `draft` and
+Next, in order. First, fix the replay defect in 0045, so a wait that runs out checks declared
+outcomes before it reports a timeout. Then the draft to approved promotion path, since every capability is `draft` and
 every replay uses `--allow-draft`, so the gate is a speed bump rather than a control, and promotion
 also closes the sharpest schema hole, a parameter declared with the wrong type passing every
-validator and surfacing on the first real replay (0026, 0014). Second, checkpoint discrimination,
+validator and surfacing on the first real replay (0026, 0014). Then checkpoint discrimination,
 since a model picking a string present on every page gets a checkpoint that passes verification and
-every future replay regardless of where the flow ended (0013). Third, build variant B of the target app and
-record a capability against it, turning the heterogeneity claim from argued into demonstrated. Fourth, aria snapshots as
-the primary visual record, the posture the safety section recommends and does not implement. Fifth,
+every future replay regardless of where the flow ended (0013). Then build variant B of the target app and
+record a capability against it, turning the heterogeneity claim from argued into demonstrated. Then aria snapshots as
+the primary visual record, the posture the safety section recommends and does not implement. Last,
 `extract_after_step` on `OutputSpec`, the narrowest real gap in the schema (0003).

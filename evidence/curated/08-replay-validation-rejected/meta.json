@@ -1,0 +1,42 @@
+{
+  "allow_draft": true,
+  "capability_id": "open-member-subaccount",
+  "capability_version": "1.0.0",
+  "exit_code": 40,
+  "finished_at": "2026-09-13T01:45:46.109813Z",
+  "git_commit": "b16ec2adb7b4d0efcb0ff2a9808e86fe61016d80",
+  "kind": "replay",
+  "model": null,
+  "params_redacted": [
+    {
+      "name": "member_id",
+      "required": true,
+      "sensitivity": "pii",
+      "supplied": true
+    },
+    {
+      "name": "account_type",
+      "required": true,
+      "sensitivity": "none",
+      "supplied": true
+    },
+    {
+      "name": "nickname",
+      "required": true,
+      "sensitivity": "none",
+      "supplied": true
+    },
+    {
+      "name": "initial_deposit",
+      "required": true,
+      "sensitivity": "none",
+      "supplied": true
+    }
+  ],
+  "policy_path": "config/policy.json",
+  "policy_sha256": "1ae61588b4e23052d024a62fa29b9d18ba56a6ac7a08071257f0e69f5707a44f",
+  "result_kind": "failure",
+  "run_id": "20260913-014533-1002",
+  "schema_version": "1.0",
+  "started_at": "2026-09-13T01:45:33.940514Z"
+}

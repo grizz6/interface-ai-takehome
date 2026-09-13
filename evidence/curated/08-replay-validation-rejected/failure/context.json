@@ -1,0 +1,20 @@
+{
+  "action": "click",
+  "detail": {
+    "error_class": "timeout"
+  },
+  "expected": "the step to settle within 10000ms",
+  "observed": "signal text_present did not hold within 10000ms",
+  "result_kind": "failure",
+  "step_index": 4,
+  "strategies_tried": [
+    {
+      "container_matched": null,
+      "matched": 1,
+      "note": null,
+      "strategy": "role_name",
+      "tier_index": 0
+    }
+  ],
+  "url": "http://localhost:8080/member/<param:redacted_0>/subaccount"
+}

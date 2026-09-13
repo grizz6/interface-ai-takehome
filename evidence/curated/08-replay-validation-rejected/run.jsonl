@@ -1,0 +1,5 @@
+{"allow_draft": true, "at": "2026-09-13T01:45:34.220086+00:00", "capability": "open-member-subaccount", "kind": "preflight", "status": "draft"}
+{"at": "2026-09-13T01:45:34.283351+00:00", "attempts": 1, "kind": "action", "step_index": 0, "tier": null}
+{"at": "2026-09-13T01:45:34.595128+00:00", "attempts": 1, "kind": "action", "step_index": 1, "tier": "role_name"}
+{"at": "2026-09-13T01:45:34.925703+00:00", "attempts": 1, "kind": "action", "step_index": 2, "tier": "label_relation"}
+{"at": "2026-09-13T01:45:35.248910+00:00", "attempts": 1, "kind": "action", "step_index": 3, "tier": "role_name"}

@@ -1,0 +1,111 @@
+<!DOCTYPE html><html><head>
+<title>Cedar Ridge Credit Union - Open Sub-Account</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<!-- Page chrome is nested tables on purpose. No grid, no flexbox. -->
+<table class="shell" cellpadding="0" cellspacing="0" border="0">
+  <tbody><tr>
+    <td class="masthead">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%">
+        <tbody><tr>
+          <td class="brand">Cedar Ridge Credit Union</td>
+          <td class="console">Member Services Console</td>
+        </tr>
+      </tbody></table>
+    </td>
+  </tr>
+  <tr>
+    <td class="navbar">
+      <table cellpadding="0" cellspacing="0" border="0">
+        <tbody><tr>
+          <td class="navcell"><a href="/">Home</a></td>
+          <td class="navcell"><a href="/search">Member Lookup</a></td>
+        </tr>
+      </tbody></table>
+    </td>
+  </tr>
+  <tr><td class="content">
+<table class="panel" cellpadding="0" cellspacing="0" border="0">
+  <tbody><tr><td class="panelhead">Open Sub-Account - Marcus Webb</td></tr>
+  <tr><td class="panelbody">
+    
+    <table class="errorbox" cellpadding="0" cellspacing="0" border="0">
+      <tbody><tr><td id="ctl00_ContentPlaceHolder1_lblValidationSummary">
+        Initial deposit must be greater than zero.
+      </td></tr>
+    </tbody></table>
+    
+
+    <form method="post" action="/member/<param:redacted_0>/subaccount">
+      <table cellpadding="4" cellspacing="0" border="0">
+        <tbody><tr>
+          <!-- LOCATOR TIER 1. Real label association. -->
+          <td class="fieldlabel">
+            <label for="ctl00_ContentPlaceHolder1_ddlAccountType">Account Type</label>
+          </td>
+          <td>
+            <select id="ctl00_ContentPlaceHolder1_ddlAccountType" name="ctl00_ContentPlaceHolder1_ddlAccountType">
+              <option value=""></option>
+              
+              <option value="Savings" selected="">Savings</option>
+              
+              <option value="Money Market">Money Market</option>
+              
+              <option value="Holiday Club">Holiday Club</option>
+              
+            </select>
+            
+          </td>
+        </tr>
+        <tr>
+          <!-- LOCATOR TIER 2. This input has no label association, no aria-label, no
+               title and no placeholder, so it has NO accessible name at all. The only
+               thing that identifies it is the text in the table cell to its left.
+               Tier 1 cannot see it. Tier 2, label text relation, is what finds it. -->
+          <td class="fieldlabel">Nickname</td>
+          <td>
+            <input type="text" size="24" id="ctl00_ContentPlaceHolder1_txtNickname" name="ctl00_ContentPlaceHolder1_txtNickname" value="Vacation" style="">
+            
+          </td>
+        </tr>
+        <tr>
+          <!-- LOCATOR TIER 1. Real label association. -->
+          <td class="fieldlabel">
+            <label for="ctl00_ContentPlaceHolder1_txtInitialDeposit">Initial Deposit</label>
+          </td>
+          <td>
+            <input type="text" size="12" id="ctl00_ContentPlaceHolder1_txtInitialDeposit" name="ctl00_ContentPlaceHolder1_txtInitialDeposit" value="-50.0" style="">
+            <div class="inlineerror">Initial deposit must be greater than zero.</div>
+          </td>
+        </tr>
+        <tr>
+          <td class="fieldlabel">
+            <label for="ctl00_ContentPlaceHolder1_ddlStatement">Statement Delivery</label>
+          </td>
+          <td>
+            <select id="ctl00_ContentPlaceHolder1_ddlStatement" name="ctl00_ContentPlaceHolder1_ddlStatement">
+              
+              <option value="Paperless" selected="">Paperless</option>
+              
+              <option value="Mailed">Mailed</option>
+              
+            </select>
+          </td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>
+            <input type="submit" class="btn" id="ctl00_ContentPlaceHolder1_btnSubmitRequest" value="Submit Request" style="">
+          </td>
+        </tr>
+      </tbody></table>
+    </form>
+    <p><a href="/member/<param:redacted_0>">Back to Member Detail</a></p>
+  </td></tr>
+</tbody></table>
+</td></tr>
+  <tr><td class="footer">Internal system. Authorized staff only.</td></tr>
+</tbody></table>
+
+</body></html>

@@ -1,0 +1,13 @@
+{
+  "action": null,
+  "detail": {
+    "code": "member_restricted",
+    "message": "The member record exists but this operator may not view it."
+  },
+  "expected": null,
+  "observed": null,
+  "result_kind": "business_outcome",
+  "step_index": -1,
+  "strategies_tried": [],
+  "url": "http://localhost:8080/member/<param:redacted_0>"
+}

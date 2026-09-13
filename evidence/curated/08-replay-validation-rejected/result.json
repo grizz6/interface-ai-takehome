@@ -1,0 +1,54 @@
+{
+  "action": "click",
+  "error_class": "timeout",
+  "evidence": {
+    "directory": "evidence/20260913-014533-1002",
+    "log_path": "evidence/20260913-014533-1002/run.jsonl",
+    "run_id": "20260913-014533-1002",
+    "screenshot_paths": [
+      "evidence/20260913-014533-1002/screenshots/000.png"
+    ]
+  },
+  "expected": "the step to settle within 10000ms",
+  "kind": "failure",
+  "observed": "signal text_present did not hold within 10000ms",
+  "step_index": 4,
+  "steps": [
+    {
+      "action": "navigate",
+      "attempt_count": 1,
+      "description": "Open the sub-account request form for the member.",
+      "duration_ms": 14,
+      "index": 0,
+      "locator_strategy_used": null,
+      "recovered_by": null
+    },
+    {
+      "action": "select",
+      "attempt_count": 1,
+      "description": "Choose the product.",
+      "duration_ms": 308,
+      "index": 1,
+      "locator_strategy_used": "role_name",
+      "recovered_by": null
+    },
+    {
+      "action": "type",
+      "attempt_count": 1,
+      "description": "Name the new sub-account.",
+      "duration_ms": 329,
+      "index": 2,
+      "locator_strategy_used": "label_relation",
+      "recovered_by": null
+    },
+    {
+      "action": "type",
+      "attempt_count": 1,
+      "description": "Enter the opening deposit.",
+      "duration_ms": 322,
+      "index": 3,
+      "locator_strategy_used": "role_name",
+      "recovered_by": null
+    }
+  ]
+}
