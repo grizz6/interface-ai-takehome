@@ -29,7 +29,7 @@ SUBACCOUNT = Path("capabilities/open-member-subaccount-1.0.0.json")
 
 REQUIRED_META = {
     "schema_version", "run_id", "kind", "started_at", "finished_at",
-    "capability_id", "capability_version", "params_redacted", "model",
+    "capability_id", "capability_version", "params_redacted", "model", "allow_draft",
     "git_commit", "policy_path", "policy_sha256", "result_kind", "exit_code",
 }
 

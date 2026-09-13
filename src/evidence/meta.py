@@ -75,6 +75,10 @@ class RunMeta(BaseModel):
     capability_version: str | None = None
     params_redacted: list[ParamDescriptor] = Field(default_factory=list)
     model: str | None = None
+    # Whether a draft capability was allowed to replay. A replay of a draft is only legitimate
+    # with the flag, and without this field the evidence cannot say which kind of run it was.
+    # None for discovery, where there is no capability to be draft.
+    allow_draft: bool | None = None
 
     git_commit: str = Field(default_factory=git_commit)
     policy_path: str | None = None

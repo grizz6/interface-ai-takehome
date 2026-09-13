@@ -274,7 +274,6 @@ def test_a_compiled_capability_round_trips() -> None:
 
 
 # -- against the real recorded run ------------------------------------------------
-@pytest.mark.skipif(not REAL.exists(), reason="the real transcript is not on disk")
 def test_the_real_transcript_compiles() -> None:
     real = DiscoveryTranscript.model_validate_json(REAL.read_text())
     out = compile_capability(real, POLICY)
@@ -286,7 +285,6 @@ def test_the_real_transcript_compiles() -> None:
     assert capability.outputs[0].name == "savings_balance"
 
 
-@pytest.mark.skipif(not REAL.exists(), reason="the real transcript is not on disk")
 def test_the_real_compiled_capability_leaks_neither_ref_nor_member_id() -> None:
     raw = json.loads(REAL.read_text())
     refs = {a["ref_used"] for a in raw["actions"] if a.get("ref_used")}

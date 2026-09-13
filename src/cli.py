@@ -36,6 +36,8 @@ from src.policy.loading import DEFAULT_POLICY_PATH, PolicyConfigError, load_poli
 from src.policy.redaction import Redactor
 from src.models.capability import Capability, describe_params
 from src.recorder.compile import CompileOutcome, compile_capability
+from src import catalog
+from src.catalog import CAPABILITIES_ROOT
 from src.escalation.operator import serve
 from src.escalation.session import DEFAULT_DEADLINE_SECONDS, Session
 from src.replay.engine import replay
@@ -133,6 +135,16 @@ def build_parser() -> argparse.ArgumentParser:
     console.add_argument("--port", type=int, default=8090)
     console.add_argument("--interventions-dir", default=str(INTERVENTIONS_ROOT), metavar="DIR")
     console.add_argument("--lease-path", default=None, metavar="FILE")
+
+    catalog = sub.add_parser("catalog", help="List capabilities, or print one's typed contract.")
+    catalog_sub = catalog.add_subparsers(dest="catalog_command", required=True)
+    listing = catalog_sub.add_parser("list", help="Every capability: id, version, status, types.")
+    describe = catalog_sub.add_parser("describe", help="The full typed contract for one id.")
+    describe.add_argument("capability_id")
+    describe.add_argument("--version", default=None, help="Defaults to the highest version.")
+    for command in (listing, describe):
+        command.add_argument("--dir", default=str(CAPABILITIES_ROOT), metavar="DIR")
+        command.add_argument("--json", action="store_true", help="Machine readable output.")
     return parser
 
 
@@ -257,6 +269,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
             capability_id=capability.capability_id,
             capability_version=capability.version,
             params_redacted=describe_params(capability, params),
+            allow_draft=args.allow_draft,
         ),
     )
     surface = WebSurface(policy, PolicyGate(policy), headless=not args.headed)
@@ -302,6 +315,24 @@ def cmd_operator(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_catalog(args: argparse.Namespace) -> int:
+    """Read-only. Exits 1 on an unknown id or an invalid artifact: no run exists to classify."""
+    try:
+        entries = catalog.load(args.dir)
+        if args.catalog_command == "list":
+            if args.json:
+                print(json.dumps([catalog.summary(e) for e in entries], indent=2))
+            else:
+                print(catalog.render_list(entries))
+            return 0
+        spec = catalog.contract(catalog.find(entries, args.capability_id, args.version))
+    except (catalog.UnknownCapability, catalog.InvalidCapability) as exc:
+        print(f"catalog: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(spec, indent=2) if args.json else catalog.render_contract(spec))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     # The one and only place .env is touched.
     load_dotenv()
@@ -314,6 +345,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_replay(args)
     if args.command == "operator":
         return cmd_operator(args)
+    if args.command == "catalog":
+        return cmd_catalog(args)
     return EXIT_CODES["failure"]
 
 

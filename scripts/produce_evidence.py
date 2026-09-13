@@ -67,6 +67,8 @@ def build(capability_path: str, params: dict[str, str], redact: list[str]) -> tu
             capability_id=capability.capability_id,
             capability_version=capability.version,
             params_redacted=describe_params(capability, params),
+            # Every run this script produces replays a draft, and says so.
+            allow_draft=True,
         ),
     )
     surface = WebSurface(policy, PolicyGate(policy), headless=True)

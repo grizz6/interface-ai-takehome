@@ -92,6 +92,7 @@ change the meaning of everything else in the directory.
 | `capability_id`, `capability_version` | which artifact was replayed, if any |
 | `params_redacted` | parameter NAMES and sensitivities. Never values. Built from the capability's declared inputs rather than from the supplied dict, so the code path that could leak one does not exist |
 | `model` | which model drove discovery, or absent for replay |
+| `allow_draft` | `true` when a draft capability was replayed because `--allow-draft` was passed; `null` for discovery. Without the flag a draft is refused at pre-flight with exit 40, so this field is how a replay of a draft explains itself |
 | `git_commit` | the commit that ran, suffixed `-dirty` if the tree was not clean |
 | `policy_path`, `policy_sha256` | which allowlist, and exactly which version of it. The path alone is worthless because the file is edited; the hash alone is unreadable because nobody knows which file it belonged to |
 | `schema_version` | the shape of this directory, so a reader can tell whether it predates a field |

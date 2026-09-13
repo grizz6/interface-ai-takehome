@@ -4,7 +4,11 @@ Everything else in this suite tests the system against fixtures and scripted mod
 file tests the output of live runs, which is the only place invariant 9 can be checked against
 a real model rather than against one whose turns we wrote ourselves.
 
-Skips when no evidence is present, so a clean checkout still passes.
+It reads the curated set, which is tracked, so these run in every checkout. They used to glob
+evidence/*/transcript.json, which in a clean clone matches nothing because the curated
+transcripts sit one level deeper, and a skipped invariant test is an unchecked invariant.
+Developer runs at the top of evidence/ are deliberately not read: the result of this suite should
+not depend on what someone happened to run last.
 """
 from __future__ import annotations
 
@@ -16,7 +20,7 @@ import pytest
 
 from src.discovery.transcript import DiscoveryTranscript
 
-TRANSCRIPTS = sorted(Path("evidence").glob("*/transcript.json"))
+TRANSCRIPTS = sorted(Path("evidence/curated").glob("*/transcript.json"))
 
 
 def _refs_used(transcript: dict[str, object]) -> set[str]:
@@ -35,7 +39,11 @@ def _refs_used(transcript: dict[str, object]) -> set[str]:
     return refs
 
 
-@pytest.mark.skipif(not TRANSCRIPTS, reason="no evidence on disk")
+def test_the_curated_evidence_contains_a_real_transcript() -> None:
+    """An empty parameter set makes pytest skip the tests below silently. This makes it fail."""
+    assert TRANSCRIPTS, "evidence/curated/ holds no transcript, so invariant 9 is unchecked"
+
+
 @pytest.mark.parametrize("path", TRANSCRIPTS, ids=lambda p: p.parent.name)
 def test_a_real_transcript_still_validates(path: Path) -> None:
     """Round tripping re-runs every ActionRecord validator against what a live run wrote."""
@@ -43,7 +51,6 @@ def test_a_real_transcript_still_validates(path: Path) -> None:
     assert restored.run_id
 
 
-@pytest.mark.skipif(not TRANSCRIPTS, reason="no evidence on disk")
 @pytest.mark.parametrize("path", TRANSCRIPTS, ids=lambda p: p.parent.name)
 def test_no_ref_from_a_real_run_reached_a_recorded_bundle(path: Path) -> None:
     """Invariant 9, against a real model for the first time.
@@ -56,10 +63,9 @@ def test_no_ref_from_a_real_run_reached_a_recorded_bundle(path: Path) -> None:
     raw = json.loads(path.read_text())
     refs = _refs_used(raw)
     if not refs:
-        # A run that was blocked or stalled before resolving anything used no refs and so
-        # cannot leak one. The README tells a reader to produce exactly such a run, and
-        # asserting otherwise here failed the suite for anyone who followed it.
-        pytest.skip("this run resolved nothing, so there is no ref that could have leaked")
+        # A run blocked or stalled before resolving anything used no refs, so the invariant holds
+        # vacuously. That is a pass, not a skip: nothing about it went unchecked.
+        return
 
     bundles: list[tuple[str, object]] = []
     for action in raw.get("actions", []):

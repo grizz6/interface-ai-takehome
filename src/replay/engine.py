@@ -617,7 +617,12 @@ def _execute(
     if isinstance(bound, FailureResult):
         return bound
     run.params = bound
-    run.note("preflight", capability=capability.capability_id, status=capability.status.value)
+    run.note(
+        "preflight",
+        capability=capability.capability_id,
+        status=capability.status.value,
+        allow_draft=allow_draft,
+    )
 
     # Screenshots black out any field bound to a pii or secret parameter, for the rest of the
     # run. Set here rather than earlier so that the checks above genuinely touch nothing: the
