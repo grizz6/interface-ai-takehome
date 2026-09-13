@@ -58,7 +58,10 @@ it loads, so a malformed allowlist is refused before a browser starts.
 make app
 ```
 
-Serves the stand-in application on <http://localhost:8080>: a fictional credit union member
+This runs in the foreground and holds the terminal. Leave it running and open a second terminal
+in the repository root for everything that follows.
+
+It serves the stand-in application on <http://localhost:8080>: a fictional credit union member
 services console, built deliberately like a legacy system, with nested table layout, an iframe,
 ASP.NET style element ids and no test IDs anywhere. `target_app/README.md` lists every route,
 every seed member, and how to arm each simulated fault.
@@ -106,15 +109,18 @@ Six steps in order. Every command is copy-pasteable from the repository root.
 
 ### 1. Start the target app
 
-```bash
-make app
-```
+Already running if you followed Setup. Running `make app` a second time fails with `Port 8080 is
+in use`. If you stopped it, start it again in its own terminal the same way.
 
 ### 2. Discover a goal
 
 **This spends API quota.** A run is up to 25 model turns, each carrying an accessibility
-snapshot and sometimes a screenshot. Skip to step 4 if you would rather not, or use the dry run
-above, which exercises everything except the model.
+snapshot and sometimes a screenshot. If you would rather not, skip to the second command in step
+3, which needs no key, or use the dry run above, which exercises everything except the model.
+
+With `GEMINI_API_KEY` blank, as `.env.example` leaves it, this exits `1` with the SDK's
+`ValueError: No API key was provided` as a Python traceback. No request is sent. Exit 1 is outside
+the result contract below, because the run never started.
 
 ```bash
 .venv/bin/python -m src.cli discover \
@@ -124,7 +130,8 @@ above, which exercises everything except the model.
 
 ### 3. Record the transcript into a capability
 
-Add `--record` to compile the successful run into `capabilities/` in the same invocation:
+Add `--record` to discover and compile in one invocation. Run it **instead of** step 2, not
+after it, or you spend the quota twice:
 
 ```bash
 .venv/bin/python -m src.cli discover \
@@ -132,13 +139,20 @@ Add `--record` to compile the successful run into `capabilities/` in the same in
   --target http://localhost:8080 --record
 ```
 
-To compile a transcript from a run you already have, without spending another call:
+To compile a transcript that already exists, with no key and no call, use the real discovery run
+that ships in the repository:
 
 ```bash
 .venv/bin/python -m src.cli record \
-  --transcript evidence/<run-id>/transcript.json \
+  --transcript evidence/curated/01-discovery-real/transcript.json \
   --out capabilities/
 ```
+
+That rewrites `capabilities/lookup-member-savings-balance-1.0.0.json` byte for byte identical to
+the committed file, which is itself a check that compilation is deterministic: `git status` stays
+clean. `--out capabilities/` overwrites any capability with the same id and version, so compiling
+a different run, a dry run included, replaces the committed artifact's provenance with that run's.
+Point `--out` somewhere else for anything but this transcript.
 
 Compiled capabilities come out `status: draft`. A draft has been recorded once and replayed
 never, so replaying one unattended is refused; see step 4.
@@ -218,7 +232,9 @@ with exit 20 instead of waiting for anyone.
 ## Exit codes
 
 One code per result kind, spaced by ten so a caller can branch on the decade without parsing
-JSON and so a related code can be added later without renumbering.
+JSON and so a related code can be added later without renumbering. These cover every run that
+starts. A process that dies before a run exists, a missing API key for instance, exits `1` with a
+traceback instead.
 
 | Code | Result kind | Meaning |
 |---|---|---|
