@@ -256,6 +256,10 @@ open-member-subaccount 1.0.0 [draft]
   Opens a deposit sub-account against an existing member relationship.
   in:  member_id: string, account_type: string, nickname: string, initial_deposit: currency
   out: new_account_number: string
+open-member-subaccount 1.1.0 [draft]
+  Opens a deposit sub-account against an existing member relationship.
+  in:  member_id: string, account_type: string, nickname: string, initial_deposit: currency
+  out: new_account_number: string
 ```
 
 ```bash

@@ -1,0 +1,410 @@
+{
+  "schema_version": "1.0",
+  "capability_id": "open-member-subaccount",
+  "version": "1.1.0",
+  "name": "Open a member sub-account",
+  "description": "Opens a deposit sub-account against an existing member relationship.",
+  "status": "draft",
+  "surface": {
+    "kind": "legacy_web",
+    "app_id": "cedar-ridge-console",
+    "variant_id": "a",
+    "base_url": "http://localhost:8080",
+    "entry_path": "/member/{member_id}/subaccount",
+    "fingerprint": {
+      "title": "Cedar Ridge Credit Union - Open Sub-Account",
+      "brand_text": "Cedar Ridge Credit Union",
+      "landmark_signals": [
+        {
+          "kind": "text_present",
+          "text": "Member Services Console",
+          "pattern": null,
+          "url_pattern": null,
+          "locator": null,
+          "aria_template": null,
+          "frame_path": [],
+          "case_sensitive": false
+        }
+      ],
+      "aria_template": null,
+      "captured_at": "2026-09-12T00:00:00Z"
+    }
+  },
+  "inputs": [
+    {
+      "name": "member_id",
+      "type": "string",
+      "required": true,
+      "description": "Member record the sub-account is opened against.",
+      "example": null,
+      "sensitivity": "pii",
+      "pattern": null
+    },
+    {
+      "name": "account_type",
+      "type": "string",
+      "required": true,
+      "description": "Product to open. One of Savings, Money Market, Holiday Club.",
+      "example": "Savings",
+      "sensitivity": "none",
+      "pattern": null
+    },
+    {
+      "name": "nickname",
+      "type": "string",
+      "required": true,
+      "description": "Operator facing label for the new sub-account.",
+      "example": "Vacation",
+      "sensitivity": "none",
+      "pattern": null
+    },
+    {
+      "name": "initial_deposit",
+      "type": "currency",
+      "required": true,
+      "description": "Opening deposit. Must be greater than zero.",
+      "example": "250.00",
+      "sensitivity": "none",
+      "pattern": null
+    }
+  ],
+  "outputs": [
+    {
+      "name": "new_account_number",
+      "type": "string",
+      "description": "The account number the confirmation screen issued.",
+      "extraction": {
+        "locator": {
+          "primary": {
+            "strategy": "label_relation",
+            "label_text": "New Account Number",
+            "relation": "preceding_sibling",
+            "role": "cell"
+          },
+          "fallbacks": [
+            {
+              "strategy": "css_fallback",
+              "css": "#ctl00_ContentPlaceHolder1_lblNewAccountNumber",
+              "brittle": true,
+              "note": "The generated ASP style id. Stable in this application but meaningless on a reskin, so it is a fallback and never the primary."
+            }
+          ],
+          "frame_path": [],
+          "geometry_hint": null,
+          "recorded_accessible_name": null,
+          "notes": "Read by its label rather than by its value, because the number is different on every run. cell_to_left would match both cells in the row and resolve to nothing."
+        },
+        "source": "text",
+        "attribute": null,
+        "parse": "raw",
+        "strip_pattern": null,
+        "required": true
+      },
+      "sensitivity": "none"
+    }
+  ],
+  "steps": [
+    {
+      "index": 0,
+      "description": "Open the sub-account request form for the member.",
+      "action": "navigate",
+      "target": null,
+      "url": "/member/{member_id}/subaccount",
+      "value": null,
+      "risk": "safe_reversible",
+      "wait": {
+        "condition": "signal",
+        "signal": {
+          "kind": "text_present",
+          "text": "Open Sub-Account",
+          "pattern": null,
+          "url_pattern": null,
+          "locator": null,
+          "aria_template": null,
+          "frame_path": [],
+          "case_sensitive": false
+        },
+        "timeout_ms": 10000,
+        "poll_ms": 250,
+        "retry_on_timeout": 0
+      },
+      "postcondition": null
+    },
+    {
+      "index": 1,
+      "description": "Choose the product.",
+      "action": "select",
+      "target": {
+        "primary": {
+          "strategy": "role_name",
+          "role": "combobox",
+          "name": "Account Type",
+          "exact": true
+        },
+        "fallbacks": [],
+        "frame_path": [],
+        "geometry_hint": null,
+        "recorded_accessible_name": "Account Type",
+        "notes": null
+      },
+      "url": null,
+      "value": {
+        "source": "param",
+        "param": "account_type"
+      },
+      "risk": "safe_reversible",
+      "wait": {
+        "condition": "fixed",
+        "signal": null,
+        "timeout_ms": 300,
+        "poll_ms": 250,
+        "retry_on_timeout": 0
+      },
+      "postcondition": null
+    },
+    {
+      "index": 2,
+      "description": "Name the new sub-account.",
+      "action": "type",
+      "target": {
+        "primary": {
+          "strategy": "label_relation",
+          "label_text": "Nickname",
+          "relation": "cell_to_left",
+          "role": "textbox"
+        },
+        "fallbacks": [],
+        "frame_path": [],
+        "geometry_hint": null,
+        "recorded_accessible_name": null,
+        "notes": "This input has no label association, no aria-label, no title and no placeholder, so it has no accessible name at all. Tier 1 cannot see it. The text in the cell to its left is the only durable handle."
+      },
+      "url": null,
+      "value": {
+        "source": "param",
+        "param": "nickname"
+      },
+      "risk": "safe_reversible",
+      "wait": {
+        "condition": "fixed",
+        "signal": null,
+        "timeout_ms": 300,
+        "poll_ms": 250,
+        "retry_on_timeout": 0
+      },
+      "postcondition": null
+    },
+    {
+      "index": 3,
+      "description": "Enter the opening deposit.",
+      "action": "type",
+      "target": {
+        "primary": {
+          "strategy": "role_name",
+          "role": "textbox",
+          "name": "Initial Deposit",
+          "exact": true
+        },
+        "fallbacks": [],
+        "frame_path": [],
+        "geometry_hint": null,
+        "recorded_accessible_name": "Initial Deposit",
+        "notes": null
+      },
+      "url": null,
+      "value": {
+        "source": "param",
+        "param": "initial_deposit"
+      },
+      "risk": "safe_reversible",
+      "wait": {
+        "condition": "fixed",
+        "signal": null,
+        "timeout_ms": 300,
+        "poll_ms": 250,
+        "retry_on_timeout": 0
+      },
+      "postcondition": null
+    },
+    {
+      "index": 4,
+      "description": "Submit the request and reach the review screen.",
+      "action": "click",
+      "target": {
+        "primary": {
+          "strategy": "role_name",
+          "role": "button",
+          "name": "Submit Request",
+          "exact": true
+        },
+        "fallbacks": [],
+        "frame_path": [],
+        "geometry_hint": null,
+        "recorded_accessible_name": "Submit Request",
+        "notes": null
+      },
+      "url": null,
+      "value": null,
+      "risk": "safe_reversible",
+      "wait": {
+        "condition": "signal",
+        "signal": {
+          "kind": "text_present",
+          "text": "Review Sub-Account Request",
+          "pattern": null,
+          "url_pattern": null,
+          "locator": null,
+          "aria_template": null,
+          "frame_path": [],
+          "case_sensitive": false
+        },
+        "timeout_ms": 10000,
+        "poll_ms": 250,
+        "retry_on_timeout": 0
+      },
+      "postcondition": {
+        "signal": {
+          "kind": "text_present",
+          "text": "Review the request below",
+          "pattern": null,
+          "url_pattern": null,
+          "locator": null,
+          "aria_template": null,
+          "frame_path": [],
+          "case_sensitive": false
+        },
+        "description": "The review screen is showing, so the form validated.",
+        "timeout_ms": 5000
+      }
+    },
+    {
+      "index": 5,
+      "description": "Confirm. This opens the account and cannot be undone.",
+      "action": "click",
+      "target": {
+        "primary": {
+          "strategy": "role_name",
+          "role": "button",
+          "name": "Confirm",
+          "exact": true
+        },
+        "fallbacks": [],
+        "frame_path": [],
+        "geometry_hint": null,
+        "recorded_accessible_name": "Confirm",
+        "notes": null
+      },
+      "url": null,
+      "value": null,
+      "risk": "risky_irreversible",
+      "wait": {
+        "condition": "signal",
+        "signal": {
+          "kind": "text_present",
+          "text": "Sub-Account Opened",
+          "pattern": null,
+          "url_pattern": null,
+          "locator": null,
+          "aria_template": null,
+          "frame_path": [],
+          "case_sensitive": false
+        },
+        "timeout_ms": 10000,
+        "poll_ms": 250,
+        "retry_on_timeout": 0
+      },
+      "postcondition": {
+        "signal": {
+          "kind": "text_present",
+          "text": "The sub-account has been opened.",
+          "pattern": null,
+          "url_pattern": null,
+          "locator": null,
+          "aria_template": null,
+          "frame_path": [],
+          "case_sensitive": false
+        },
+        "description": "The confirmation screen proves the account was actually opened.",
+        "timeout_ms": 5000
+      }
+    }
+  ],
+  "checkpoint": {
+    "signal": {
+      "kind": "text_present",
+      "text": "Sub-Account Opened",
+      "pattern": null,
+      "url_pattern": null,
+      "locator": null,
+      "aria_template": null,
+      "frame_path": [],
+      "case_sensitive": false
+    },
+    "description": "The run only succeeded if the confirmation screen is showing.",
+    "timeout_ms": 5000
+  },
+  "known_outcomes": [
+    {
+      "code": "member_not_found",
+      "description": "No member record matches the supplied member id.",
+      "detect": {
+        "kind": "text_present",
+        "text": "No member record matches",
+        "pattern": null,
+        "url_pattern": null,
+        "locator": null,
+        "aria_template": null,
+        "frame_path": [],
+        "case_sensitive": false
+      },
+      "check_after_step": 0,
+      "terminal": true,
+      "partial_outputs": []
+    },
+    {
+      "code": "member_restricted",
+      "description": "The member record exists but this operator may not view it.",
+      "detect": {
+        "kind": "text_present",
+        "text": "This member record is restricted",
+        "pattern": null,
+        "url_pattern": null,
+        "locator": null,
+        "aria_template": null,
+        "frame_path": [],
+        "case_sensitive": false
+      },
+      "check_after_step": 0,
+      "terminal": true,
+      "partial_outputs": []
+    },
+    {
+      "code": "validation_rejected",
+      "description": "The application rejected the submitted values and showed field errors.",
+      "detect": {
+        "kind": "text_present",
+        "text": null,
+        "pattern": "Select an account type\\.|Nickname is required\\.|Initial deposit (is required|must be a number|must be greater than zero)\\.",
+        "url_pattern": null,
+        "locator": null,
+        "aria_template": null,
+        "frame_path": [],
+        "case_sensitive": false
+      },
+      "check_after_step": 4,
+      "terminal": true,
+      "partial_outputs": []
+    }
+  ],
+  "recoveries": [],
+  "overrides": {},
+  "provenance": {
+    "discovered_by_model": "none: hand authored",
+    "discovery_run_id": "hand-authored-phase-7",
+    "recorded_at": "2026-09-12T00:00:00Z",
+    "goal_text": "open a <param:account_type> sub-account for member <param:member_id>",
+    "raw_step_count": 6,
+    "redaction_policy_version": "1.0",
+    "human_edited": true
+  }
+}

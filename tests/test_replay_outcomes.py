@@ -18,23 +18,12 @@ from src.models.results import BusinessOutcomeResult
 from src.policy.redaction import Redactor
 from src.replay.engine import replay
 
-SUBACCOUNT = Path("capabilities/open-member-subaccount-1.0.0.json")
-
-# The error messages the target app really shows on the sub-account form.
-FORM_ERRORS = (
-    r"Select an account type\.|Nickname is required\.|"
-    r"Initial deposit (is required|must be a number|must be greater than zero)\."
-)
+SUBACCOUNT = Path("capabilities/open-member-subaccount-1.1.0.json")
 
 
-def _subaccount(live_app: str, *, real_validation_signal: bool) -> Capability:
+def _subaccount(live_app: str) -> Capability:
     data = json.loads(SUBACCOUNT.read_text())
     data["surface"]["base_url"] = live_app
-    if real_validation_signal:
-        for outcome in data["known_outcomes"]:
-            if outcome["code"] == "validation_rejected":
-                outcome["detect"]["text"] = None
-                outcome["detect"]["pattern"] = FORM_ERRORS
     return Capability.model_validate(data)
 
 
@@ -56,7 +45,7 @@ def test_a_rejected_form_is_a_business_outcome_even_though_the_wait_times_out(
     live_app: str, surface: Any, policy_config: Any, tmp_path: Path
 ) -> None:
     """Step 4 waits for the review screen. A rejected deposit never shows it."""
-    capability = _subaccount(live_app, real_validation_signal=True)
+    capability = _subaccount(live_app)
 
     result = _run(capability, _params(initial_deposit="-50.00"), surface, policy_config, tmp_path)
 
@@ -74,7 +63,7 @@ def test_a_member_outcome_on_the_entry_screen_is_not_mistaken_for_drift(
     member_id: str, code: str, live_app: str, surface: Any, policy_config: Any, tmp_path: Path
 ) -> None:
     """The fingerprint check used to stop these at pre-flight with surface_unavailable."""
-    capability = _subaccount(live_app, real_validation_signal=False)
+    capability = _subaccount(live_app)
 
     result = _run(capability, _params(member_id=member_id), surface, policy_config, tmp_path)
 
@@ -97,3 +86,25 @@ def test_a_real_title_change_still_stops_at_pre_flight(
     assert result.kind == "failure", result
     assert result.error_class.value == "surface_unavailable"
     assert result.step_index == -1
+
+
+def test_the_validation_signal_matches_every_error_the_form_can_show() -> None:
+    """1.0.0 looked for "Correct the highlighted fields", which the app never shows.
+
+    Checked against the app's own message table rather than a copy of it, so a reworded message
+    fails here instead of silently turning a rejected form back into a timeout.
+    """
+    import re
+    import sys
+
+    sys.path.insert(0, "target_app")
+    from seed import VARIANTS
+
+    detect = next(
+        o.detect for o in Capability.model_validate_json(SUBACCOUNT.read_text()).known_outcomes
+        if o.code == "validation_rejected"
+    )
+    assert detect.pattern is not None
+    form_errors = {k: v for k, v in VARIANTS["a"]["errors"].items() if k != "member_id_required"}
+    for key, message in form_errors.items():
+        assert re.search(detect.pattern, message, re.IGNORECASE), f"{key}: {message!r}"
