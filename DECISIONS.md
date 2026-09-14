@@ -1,1537 +1,1085 @@
 # Decisions
 
-A running log of the choices made while building this system, written as they happen rather than
-reconstructed at the end. Every entry names the alternative that was rejected and the known
-weakness of what was chosen, so REPORT.md can be assembled from this file instead of from memory.
-Deliberate stubs, mocks, and omissions are recorded here in the same session they are made, per
-design rule 8.
-
-## 0001. Python, Playwright sync API, and Pydantic v2
-
-Phase 0.
-
-The system is built on Python 3.11 with the Playwright sync API driving the web surface, Pydantic
-v2 for every schema, and the Anthropic SDK confined to the discovery loop. The artifact schema is
-what this project is graded on above all else, and Pydantic gives one definition that acts as the
-parser, the runtime validator, and the source of the JSON Schema exported to `schemas/`. A
-reviewer then reads the same shape the code actually enforces, rather than a document that claims
-to describe it. Python also keeps the discovery loop, the replay engine, and the Flask target
-application in a single language, so the accessibility tree observation model is written once and
-shared.
-
-Rejected: TypeScript with Playwright and Zod. It is a genuine contender and is arguably stronger
-on type safety alone. Playwright's TypeScript binding is the reference implementation and receives
-features first, Zod infers static types from the same declaration without a separate checking
-step, and a discriminated union like the result contract in design rules section 7 would be verified
-by the compiler rather than by an opt-in tool.
-
-Known weakness of the choice: two, both accepted with open eyes. First, typing in Python is
-advisory, so `mypy --strict` has to be run deliberately and only sees what has been annotated,
-where a TypeScript build would simply refuse to produce output. The convention in the design rules
-section 9 is therefore load-bearing rather than decorative. Second, the Playwright sync API blocks
-the calling thread, which is the awkward part of the escalation seam in invariant 7: the browser
-context has to stay alive and driveable by a human at a moment when Python is not calling into it.
-That forces the control lease to be an explicit, modelled object instead of something that falls
-out of an async event loop for free. Phase 7 is where that cost is paid.
-
-
-## 0002. Real exceptional states and simulated faults are produced by different mechanisms
-
-Phase 1.
-
-The target app produces its exceptional states two different ways. Not found, permission
-denied, and validation failure are real: they fall out of the seed data and the submitted
-input, with no switch involved. Request a member id that was never seeded and you get the
-no member found screen. Request member 100003, whose record carries a restricted flag, and
-you get permission denied. Submit a non-positive initial deposit and the server rejects it
-and returns the form with an inline error. The four conditions on /dev/faults, an unexpected
-interstitial, session expiry, a slow response, and a server error, are simulated instead:
-armed by hand, stored in the Flask session, fired once, then disarmed. The dividing line is
-whether the condition is a property of the data or a property of the runtime.
-
-Rejected: drive all seven from the fault console as uniform toggles. It is a smaller
-mechanism and there would be one place to look. It was rejected because a "record not found"
-produced by a toggle proves nothing about the system under test. Replay would be detecting a
-flag the harness set rather than a condition the application genuinely produced, and the
-distinction between a business outcome and a failure is exactly the one the brief names as
-the most common design mistake. Those three have to arise from data and input or the evidence
-for invariant 5 is circular.
-
-Known weakness of the choice: three, all accepted. The simulated faults fire on GET only,
-so a session expiry in the middle of a form POST, arguably the most realistic and most
-painful version of that condition, cannot be produced at all. That was traded away because
-an interstitial or a redirect fired on a POST discards the submission and leaves the Continue
-control with nothing to resume, which is noise rather than signal. Armed faults live in the
-session cookie, so they are scoped to one browser context, which conveniently keeps
-concurrent runs from disturbing each other but means a fault cannot be armed out of band by
-anything that does not share the cookie jar. And the real states are only as real as the
-seed data: with no database there is no way to produce a genuine mid-transaction failure,
-so that class of error is out of reach of this stand-in entirely.
-
-## 0003. Three shape decisions in the capability schema
-
-Phase 2. Three related choices about where information lives in the artifact, each with what
-was rejected and what it costs.
-
-### Extraction is declared on outputs, not performed as a step
-
-Reading a value is declared once on `OutputSpec.extraction`. Steps only act. The split is
-between changing the state of the surface and observing it, and it buys three things: the
-return contract is legible in one place, so a calling agent reading the artifact learns what
-it gets back without simulating the step list; replay can extract without walking the steps a
-second time; and a tenant whose confirmation screen puts the account number in a different
-cell is an `output_overrides` entry rather than a re-recorded flow.
-
-Rejected: an `extract` action type, making reading just another step with a named result. It
-is a smaller action model, there is one list to execute rather than two phases, and crucially
-it makes extraction ordering explicit.
-
-Known weakness, and this one is real rather than theoretical: because extraction is declared
-rather than sequenced, every output is read at the same moment, after the last step. A value
-that is only on screen mid-flow, such as a reference number an interstitial shows and the
-next navigation destroys, cannot be captured by this schema at all. If we hit that case the
-fix is an `extract_after_step` field on OutputSpec, not reintroducing an extract action,
-because the declaration is the part worth keeping.
-
-### Checkpoints exist at both step and capability level
-
-`Step.postcondition` asserts that one action did what it claimed. `Capability.checkpoint`
-asserts that the flow as a whole arrived at the goal. Both exist because they fail
-differently and the caller needs to tell those failures apart: a failed postcondition
-localizes the defect to one step index, while a checkpoint that fails after every step passed
-means the steps were individually fine and the flow still did not reach the goal, which is a
-different bug and usually a worse one. This is also why a `risky_irreversible` step is
-required to carry a postcondition. An irreversible action has to prove what it did at the
-moment it did it, not at the end of the run when the evidence may be gone.
-
-Rejected: a capability-level checkpoint only. Less to write and less to keep true, and it is
-defensible that the end state is the only thing a caller really cares about.
-
-Known weakness: two levels is two places to be wrong, and the redundancy is not hypothetical.
-In the test fixture the final step postcondition and the capability checkpoint assert the same
-text, which is duplication, and the schema neither detects nor forbids it. A careless author
-can write a flow whose checkpoint adds nothing at all, and nothing in validation will say so.
-
-### Known outcomes are per capability, not a global catalogue
-
-`BusinessOutcomeSpec` hangs off the Capability. "Member not found" is only meaningful for a
-flow that looks a member up, and the signal that detects it is specific to one screen in one
-application. A global registry would have to be qualified by app and screen anyway, which is
-the same information with an extra lookup in front of it. Keeping them local is also what
-makes the artifact self-describing: one file tells a calling agent every legitimate answer it
-can receive, with no second document to consult.
-
-Rejected: a global outcome catalogue keyed by code, with capabilities referencing codes.
-That guarantees `member_not_found` means the same thing everywhere, makes reporting across
-capabilities trivial, and stops the same detection signal being written out repeatedly.
-
-Known weakness: duplication and drift, which is exactly what the catalogue would have
-prevented. Ten capabilities against the same application will each redeclare
-`member_not_found` with their own detect signal, nothing forces those signals to agree, and
-when the application changes its wording they will fall out of sync one at a time rather than
-all at once. Codes are only conventionally stable too: validation enforces snake_case and
-uniqueness within a single capability and nothing beyond that. If the catalogue becomes
-necessary the migration is mechanical, hoisting shared codes out and leaving per-capability
-detect signals behind as overrides.
-
-## 0004. Anything knowable at record time is rejected at record time
-
-Phase 2 correction.
-
-The validators added across phase 2 share one principle, and it is worth stating on its own
-because it is what decides whether a rule belongs in the schema at all: if a defect can be
-detected from the artifact alone, the schema refuses the artifact rather than leaving the
-executor to discover it. A regex is compiled when the capability is constructed. A business
-outcome that says it checks after step 9 is rejected when only six steps exist. A recovery
-scoped to a step index nobody declared is rejected the same way. So is a required input
-nothing references, a risky step with nothing to prove it happened, and a sensitive parameter
-carrying an example value.
-
-The reason is the approval model, not tidiness. A capability moves from draft to approved
-because a person read it and signed it off, and from then on it replays unattended. An
-artifact that passes that review and then fails the first time the executor reaches step four
-has broken the thing approval was supposed to buy: the reviewer had no way to catch the
-defect, and the failure surfaces in production against a live banking system rather than at a
-desk. Every rule moved earlier turns a production incident into a construction error.
-
-Rejected: validate lazily, and let the replay engine report a bad pattern or a dangling step
-index as an ordinary Failure result. It is less schema code, the executor already has to
-handle runtime errors so the path exists anyway, and it keeps the models closer to plain data.
-It was rejected because it puts the cost in the worst possible place. A Failure at replay time
-is expensive to diagnose, arrives with a half-finished flow behind it, and for an
-irreversible step may arrive after the damage is done, while the same defect at record time
-costs one line of output and no side effects at all.
-
-Known weakness, three of them and the second is the sharpest.
-
-First, the principle has a hard ceiling. It catches internal inconsistency only, never
-divergence between the artifact and the live surface. A locator naming a control that was
-renamed last Tuesday is perfectly valid to this schema and will still fail at replay. Record
-time validation is not a substitute for the fingerprint and drift work, it is a different
-guarantee that happens to look similar.
-
-Second, the published JSON Schema cannot express most of these rules, and re-exporting after
-adding regex compilation produced a byte identical file. `AfterValidator` and the cross field
-model validators are runtime constraints with no JSON Schema equivalent, so anything
-validating an artifact against `schemas/capability.schema.json` alone will accept artifacts
-that Pydantic rejects. The exported schema is a documentation and codegen aid; the Python
-model is the enforcement boundary, and any consumer that needs the real contract has to go
-through the model rather than the schema file.
-
-Third, there is a coverage gap in this pass that is worth naming rather than quietly
-carrying: `ParamSpec.pattern` is also a user supplied regex and is not yet compiled at record
-time, because only `Signal.pattern`, `Signal.url_pattern` and `ExtractionSpec.strip_pattern`
-were in scope. The same principle applies to it and it should get the same treatment.
-
-## 0005. A structural signal, added before anything needs it
-
-Phase 2 revision.
-
-`SignalKind.aria_matches` and `Signal.aria_template` let a signal assert the shape of a screen
-rather than the presence of a string, and `SurfaceFingerprint.aria_template` records that
-shape at recording time. A text assertion answers "does this string appear somewhere". A
-structural assertion answers "is this the screen I recorded". Those are different questions,
-and for a checkpoint the second is the one actually being asked: the words "Sub-Account
-Opened" sitting in a hidden template, or in a breadcrumb, satisfy `text_present` while the
-flow is in fact nowhere near the confirmation screen. A heading with that name, in a tree
-with that shape, does not have the same failure mode. The fingerprint gets one for the same
-reason on a longer timescale: a tenant renaming a button is a text difference, but a tenant
-inserting an extra confirmation step is a shape difference, and only the second is detectable
-without diffing every string on the page.
-
-The timing is the part that needs defending, because nothing consumes this field yet. The
-answer is that the cost of adding it is a step function and we are on the cheap side of it for
-exactly one more phase. `Capability` is pinned at `schema_version` 1.0, `capabilities/` is
-empty, and no discovery run has ever written an artifact, so today this is a field appearing
-in a schema nobody has serialized against. The moment the recorder writes the first capability
-the same edit needs a version bump, a migration, and a compatibility story for artifacts that
-have already been reviewed and approved. Doing it now costs one commit. Doing it in three
-phases costs all of that plus the temptation to skip it.
-
-Rejected: wait until the recorder actually needs it, then bump to 1.1. This is ordinary YAGNI
-and it is usually the right call, with a real argument behind it: a field designed before its
-consumer exists is a field designed from imagination, and it will probably be the wrong shape.
-It was rejected because the penalty is asymmetric. A wrongly shaped field on a schema nothing
-has serialized is a free edit, while a correctly shaped field added after approved artifacts
-exist is a migration. When one branch is cheap to undo and the other is not, guessing early is
-the better bet.
-
-Known weakness, two.
-
-The first is the one that decides where this may be used. An aria template is far more brittle
-to benign markup change than a text assertion is. Wrapping a heading in a div, or a framework
-upgrade that adds a generic container, leaves `text_present` completely unmoved and can change
-the snapshot's shape. So `aria_matches` belongs on capability checkpoints and on surface
-fingerprints, where "is this the screen I recorded" is genuinely the question, and not on
-ordinary step postconditions, where it would convert every cosmetic change into a replay
-failure. Nothing in the schema enforces that placement. It is a convention, and validation
-will cheerfully accept an `aria_matches` postcondition on all six steps of a flow.
-
-The second was an honest contradiction with 0004, and it has since been narrowed rather than
-closed. `aria_template` is now parsed with `yaml.safe_load` during schema validation, so a
-template that is not well formed YAML is rejected at record time like every other defect that
-is knowable from the artifact alone. What remains uncovered is semantics: a template can parse
-perfectly and still describe a shape no screen will ever have, and that is only discovered when
-replay tries to match it. The line falls there because Playwright exposes no public parser for
-the aria template dialect, so syntax is checkable with an ordinary YAML parser while validity
-is not checkable without reimplementing their matcher. The error message says which of the two
-it checked, so nobody reads a clean construction as proof the template is correct.
-
-## 0006. Where describe() lives, and why XPath here is not a CSS fallback
-
-Phase 3.
-
-### describe() belongs to the surface, not to the recorder
-
-Turning a per-snapshot ref into a durable `LocatorBundle` is a method on `Surface`. Two things
-force it there. It needs the observation that produced the ref, and it needs the live page, in
-order to verify that each candidate tier actually resolves to exactly one element right now.
-A recorder handed a transcript afterwards has neither: the refs are dead the moment the next
-snapshot is taken, and the page has moved on. Invariant 9 says the conversion happens at the
-moment of the action, and the only component holding the session at that moment is the surface.
-Putting it there also splits the work along the right line for section 3.7: a desktop surface
-reimplements `describe()` against the UI Automation tree with its own notion of a container,
-while the recorder stays surface agnostic and simply collects whatever bundles it is handed.
-
-Rejected: keep the surface a thin driver and do the interpretation in the recorder. On paper
-that is cleaner layering, I/O on one side and meaning on the other. It was rejected because the
-recorder would then need a live handle back into the surface to verify its candidates, which is
-the same coupling with an extra hop, or it would have to emit unverified bundles. The second is
-worse than it sounds: a bundle that has never successfully resolved even once is not a locator,
-it is a guess that will be discovered wrong during replay rather than during recording, which is
-exactly the ordering DECISIONS.md 0004 exists to prevent.
-
-Known weakness: the surface now does two jobs, perceiving and interpreting, and `web.py` is 394
-lines against the 300 line convention in section 9. The tier logic is also only notionally
-shared: a second surface reimplements all four tiers rather than reusing them. If a third
-surface ever appears, tier selection should be lifted into a shared component that takes an
-`Observation` and returns candidate specs, leaving each surface responsible only for verifying
-them. That refactor is cheap now and gets expensive once two surfaces have diverged.
-
-### A semantic relation expressed in XPath is not the same thing as a CSS fallback
-
-Tiers 2 and 3 compile to XPath. That does not make them brittle in the way tier 4 is, and the
-difference is what the expression names rather than which syntax it uses.
-
-Tier 2 compiles to `//tr[./*[normalize-space(.)="Nickname"]]` and then asks `get_by_role` for
-the textbox inside it. What that names is a relationship a person would say out loud: the field
-in the row labelled Nickname. Rename the element id, restyle the table, replace the input with a
-different widget carrying the same role, and it still resolves. Tier 4 compiles to
-`#ctl00_ContentPlaceHolder1_txtNickname`, which names one element by one attribute that exists
-for no reason except that a framework generated it. Both are strings in a selector argument.
-Only one survives the page being rebuilt.
-
-This matters beyond pedantry because the winning tier is recorded on every run as drift
-telemetry. If XPath were classed as brittle alongside CSS, every tier 2 resolution would report
-degradation, and a signal that fires constantly is a signal nobody reads.
-
-Rejected: build tiers 2 and 3 out of Playwright's own `filter` and `has` chaining and avoid raw
-selector strings altogether. This was genuinely attractive and `locator("table").filter(...)`
-reads better than an axis expression. It was rejected on evidence: against this app,
-`filter(has_text="Deposit Accounts")` matched two tables, because an ancestor table contains the
-text as well, while `ancestor::table[1]` matched exactly one. Expressing "the nearest enclosing
-region" needs an axis, and the locator API has no axis.
-
-Known weakness: XPath 1.0 is the weakest link in the chain. It has no escape character, so
-quoting goes through a `concat()` helper. `normalize-space(.)` on a row matches concatenated
-descendant text and will match more broadly on a denser page than it does here. And the
-expression names a `tr`, which is HTML specific, so tier 2 is semantic in intent but HTML shaped
-in implementation. That seam is precisely where a desktop surface will need its own code rather
-than a shared one.
-
-### A conflict this phase surfaced, since resolved in 0007
-
-An element whose only available locator is CSS cannot currently be recorded at all. The one real
-example is the navigation control implemented as a span with an inline onclick: it has no ARIA
-role, so the aria snapshot reports it only as a bare text node, and `get_by_role` cannot see it.
-Tiers 1 to 3 are all role based, so all three fail, leaving tier 4 alone. But `LocatorBundle`
-refuses a `css_fallback` primary, so no bundle can be built.
-
-Both rules are deliberate. The schema forbids a brittle primary so an approved artifact never
-rests on a generated DOM id. Tier 4 exists because controls like this one are real. They
-collide, and invariant 1 says code adapts to the schema rather than the other way round, so
-`describe()` raises `LocatorUnresolved` with the reason and the conflict is recorded here
-instead of being settled by quietly editing a validator. Three ways out for whoever takes it:
-permit a brittle primary when the bundle records why no other tier applied, fix the control in
-the target application, which in the real environment means asking a vendor and waiting, or add
-a text relation tier that can address role-less elements by their visible text and their
-position relative to a named neighbour. The third is probably the right answer, and it is a
-schema change, which is why it is a proposal here rather than a commit.
-
-**Resolved in 0007.** The third option was taken.
-
-## 0007. A text relation tier, resolving the conflict left open in 0006
-
-Phase 3 correction.
-
-`TextRelationLocator` addresses a control by its visible text, optionally scoped to a named
-container, and it is permitted as a bundle primary. The tier order is now role_name,
-label_relation, container_ordinal, text_relation, css_fallback, and `css_fallback` is the only
-strategy still forbidden as a primary. The onclick span that could not be described at all now
-describes as a text_relation primary and resolves back to the same element.
-
-Visible text was chosen over the two alternatives 0006 listed. Permitting a brittle primary
-would have meant approved artifacts resting on `#ctl00_ContentPlaceHolder1_lnkOpenSub`, a string
-that exists only because a framework generated it and that changes when someone reorders a
-content placeholder; the schema forbids that for good reason and bending the rule for one
-awkward control is how such rules stop meaning anything. Fixing the target application is the
-right answer in a repository you own and is not available in the environment this stands in
-for, where the application belongs to a vendor and the answer to "please add a role attribute"
-is a support ticket and a release cycle. Visible text is the only remaining handle that a human
-operator would actually use, which is the same standard the other tiers are held to.
-
-It sits below container_ordinal rather than above it, and that ordering is the part worth
-defending. Text is the most human-legible handle and also the least structural one. A role plus
-an accessible name is a contract the application makes with assistive technology; a container
-plus an ordinal is a statement about layout that survives copy changes entirely. Visible text
-survives neither a rewording nor a translation. So text goes below anything structural and
-above only the CSS tier, and it is reached exactly when the accessibility tree has nothing to
-offer. Ordering it above container_ordinal would have meant preferring the more fragile handle
-whenever both applied, which is the wrong default even though text reads better in a diff.
-
-Rejected: a dedicated `role_missing` tier that matched on text plus the element's position
-among its siblings, which would survive a rewording. It was rejected as premature. It needs a
-sibling index, which is the same brittleness as an ordinal without the container to anchor it,
-and there is exactly one control in the target application that needs this tier at all. One
-example is not enough evidence to design a compound strategy around.
-
-Known weakness: text is precisely what tenant rebranding changes. Section 1 of the brief
-describes hundreds of institutions running the same vendor product "configured, branded, and
-versioned differently", and relabelling controls is the most common thing such configuration
-does. A bundle whose primary is text_relation is therefore the single most likely kind of
-bundle to need a per-variant override, and worse, it will fail in the quietest way: the control
-is still there, still in the same place, still doing the same thing, and the locator no longer
-matches because someone changed "Open Sub-Account" to "New Sub-Account". Two mitigations exist
-and neither is built yet. `VariantOverride.step_overrides` can already carry a replacement
-bundle per tenant, which handles it once discovered. And because the winning tier is recorded
-on every run, a fleet-wide report of text_relation primaries is the natural place to look first
-when a tenant upgrade breaks a batch of capabilities.
-
-## 0008. Gemini through the Interactions API, run statelessly
-
-Phase 4, step 1. The provider switch from Anthropic to Gemini was directed rather than chosen,
-so what is recorded here is the part that was actually a decision: which of Gemini's two
-surfaces to build against, and how to use it.
-
-Checked against the current documentation rather than from memory, because this changed
-recently. `client.models.generate_content` still exists, but its function calling guide is now
-published under a heading marked Legacy, while the Interactions API went generally available in
-June 2026 and is documented as the recommended path for new projects. Building a new client
-against the surface Google labels legacy would be a decision that needs defending in six months
-and cannot be.
-
-The part worth arguing is that the Interactions API is stateful by default and this client does
-not use that. Interactions can hold conversation state server side and be continued with
-`previous_interaction_id`. We pass `store=False` and send the whole transcript in `input` on
-every turn. Three reasons, in order of weight. The recorder compiles the transcript into a
-Capability, so the transcript has to be a local object we own rather than a handle to something
-held elsewhere. Evidence has to be reproducible and archivable into `evidence/`, and half a run
-living on a vendor's server is not evidence we can ship. And the `ModelClient` protocol is
-deliberately stateless, `complete(system, messages, tools)`, which is what lets `ScriptedClient`
-substitute for the real one so completely that the loop cannot tell them apart; a server side
-conversation graph does not have a scriptable equivalent.
-
-Rejected: server side state with `previous_interaction_id`. It sends less over the wire on every
-turn, which on a twenty step run with a growing observation history is not a small saving, and
-it is the mode the API is designed around. It was rejected because it trades an artifact we own
-for a handle we do not, and this whole project is about producing an artifact.
-
-Also rejected, and explicitly ruled out by the brief for this step: the OpenAI compatibility
-endpoint. It would have made the client shape more familiar and is a dead end for function
-calling fidelity.
-
-Known weakness: the translation in `to_input_payload` and `to_model_turn` is written against
-the SDK's own type definitions, which were read directly, but it has never made a live call.
-There is no key in this environment and no test here touches a network, so the request shape is
-asserted and the round trip is not. The first real discovery run is where that gets tested, and
-it is the most likely thing in this module to need a correction. The translation functions are
-module level and pure precisely so that the correction is a small one.
-
-## 0009. The error screens are inside the allowlist
-
-Phase 4, step 1.
-
-`config/policy.json` permits `/maintenance`, `/maintenance/continue` and `/session-expired`,
-which looks wrong at a glance: every one of them is a failure state, and an allowlist that
-includes failure states reads like an allowlist that has stopped discriminating.
-
-It is the opposite. The interstitial recovery in the artifact schema works by arriving at the
-maintenance notice and clicking Continue. If those paths were denied, the gate would block the
-system's own recovery: the run would land on the maintenance screen, the arrival check would
-refuse the URL it had just landed on, and a condition classified as recoverable would be
-converted into a `PolicyViolation`. The same holds for the session expired screen, which the
-escalation path needs to reach in order to hand a human a session worth repairing. Denying a
-path you will predictably land on does not stop you landing there. It only removes your ability
-to do anything once you have.
-
-The principle underneath, and the one to apply when this list grows: the allowlist describes
-where the agent may legitimately BE, not where things are going well.
-
-Rejected: deny the error paths and special case the recovery, letting the gate be bypassed for
-a known set of recovery navigations. That keeps the allowlist looking pure. It was rejected
-because a bypass is a hole, and a hole with a good reason attached is still the thing an
-attacker or a confused model looks for. Invariant 3 says the gate is the constraint that cannot
-be argued past, and a gate with a documented exception list is a gate that can be.
-
-Known weakness: the allowlist is now a mix of two categories, ordinary application routes and
-screens that only appear when something has gone wrong, with nothing in the file marking which
-is which. A reader six months from now sees one flat list and cannot tell that
-`/session-expired` is load bearing for escalation rather than a leftover. A `reason` field per
-pattern would fix it and would also make the file self documenting, at the cost of no longer
-being a direct `PolicyConfig` dump, which is what currently gives validation at load for free.
-
-## 0010. No wait tool is offered to the model
-
-Phase 4, step 2.
-
-The model gets eight tools and none of them waits. There is no `wait`, no `sleep`, no
-`wait_for_text`. This is deliberate and the prompt says so in as many words, because a model
-that has been trained on browser automation will expect one and will otherwise invent reasons
-its absence is a problem.
-
-Waiting is the surface's job and it is already done there, bounded and configurable.
-`resolve()` retries every tier against a shared budget before it will believe that nothing
-matched, and `act()` settles the load state before returning. By the time a tool result comes
-back, the page has settled and any control that was going to appear has appeared. So a wait
-tool would not add a capability, it would duplicate one that already exists a layer down,
-where it is enforced rather than requested.
-
-The reason to actively withhold it rather than merely not need it is that it is an attractive
-nuisance. A discovery run has a step budget. A model that is uncertain what it is looking at
-has an obvious escape hatch in waiting, and waiting always appears to be progress: it is
-cheap, it never errors, and it postpones the decision. The failure mode is a run that spends
-eight of its twenty steps waiting and then hits max_steps without ever having tried the second
-route. Removing the tool forces the uncertainty to resolve into either look or a different
-action, both of which produce information.
-
-Rejected: expose a bounded wait, capped at a couple of seconds, on the grounds that the model
-sometimes knows something the surface cannot, such as a progress spinner it can see in the
-snapshot. That is a real case. It was rejected because the same information is better used
-differently: seeing a spinner should make the model call look again, which costs the same
-turn and returns an actual observation rather than a delay. The tool would have been a worse
-version of one we already have.
-
-Known weakness: this holds only while the surface's waiting stays correct and bounded. If a
-future surface has a genuinely asynchronous update that `resolve()` cannot see, because
-nothing changes in the accessibility tree until a websocket delivers, then the model will have
-no recourse at all and will look, see the same screen, and eventually give up. The honest fix
-at that point is to extend the surface's wait conditions, not to hand the problem to the
-model. This entry is where to start reading if that day comes.
-
-## 0011. The model points at refs, it never authors a locator
-
-Phase 4, step 2.
-
-No tool schema exposed to the model contains a LocatorBundle, or any field that could carry
-one, even though the artifact models the schemas are derived from are full of them.
-`finish` takes a `ref` where OutputSpec takes an extraction locator, and its checkpoint offers
-only the four Signal kinds that need no locator. The model says which element it means by
-ref; `describe()` converts that ref into a durable bundle, choosing the tier and verifying it
-resolves, before anything is recorded.
-
-The reason is where the decision then lives. Locator tier selection is the load bearing
-judgment in this whole system: it decides whether a recording still works next month, and it
-is the thing the evaluation criteria name first. If the model authors locators, that judgment
-moves into the prompt, where it is a request that a model may ignore, misunderstand, or
-cheerfully hallucinate a plausible looking CSS selector for. Keeping it in `describe()` puts
-it in Python, where every candidate is checked against the live page before it is written
-down. It is the same argument invariant 3 makes about the policy gate, applied to locators.
-
-Rejected: let the model propose a locator and have the surface validate it, refusing anything
-that does not resolve uniquely. This is not a bad design. It would let the model contribute
-its reading of the page, which is genuinely useful for controls whose best handle is not
-obvious. It was rejected on the cost of the failure case: a proposal that validates is not the
-same as a proposal that is durable, and the model has no way to know that
-`#ctl00_ContentPlaceHolder1_lnkOpenSub` resolves today and rots next release, while
-`describe()` knows because tier order encodes exactly that.
-
-Known weakness: the model can still point at the wrong element, and nothing here catches that.
-A ref names one node in a snapshot the model may have misread, and `describe()` will faithfully
-build a perfect durable locator for the wrong control. The tier machinery guarantees that
-whatever was pointed at can be found again, not that it was the right thing. What catches that
-is the checkpoint, which is also model authored, so a run can be confidently and consistently
-wrong end to end. Phase 9 is where that gets tested rather than argued, and it is the reason
-evidence is worth more than any assertion in this file.
-
-## 0012. What the loop tells the model, and what it withholds
-
-Phase 4, step 3.
-
-Two decisions about the model's context window, both of which come down to the same thing:
-what the model is given shapes what it spends its steps on.
-
-### A refusal names the rule and nothing else
-
-When the policy gate refuses an action the model is told that the action was refused, which
-rule refused it, that the refusal is final, and that the direction is closed. It is not told
-which pattern matched, which path was denied, or anything about the shape of the allowlist.
-`PolicyViolation` carries `rule` and `reason` as separate attributes precisely so the loop can
-pass one and drop the other, and there is a test asserting the pattern never appears in a
-tool_result.
-
-The reason is that a model given the boundary will explore the boundary. Told that
-`/dev/faults` matched `^/dev(/.*)?$`, a capable model will quite reasonably try `/dev` without
-a slash, or a redirect, or a path that reaches the same page by another route. None of that is
-malice, it is the model doing what it was asked to do with the information it has, and every
-one of those attempts is a wasted step and another blocked action. Naming the rule is enough
-to make the refusal legible without making it negotiable.
-
-Rejected: say nothing at all beyond "refused". It leaks less. It was rejected because a bare
-refusal is indistinguishable from a transient error, and the model's correct response to a
-transient error is to retry, which is exactly the behaviour the three consecutive block limit
-exists to catch. Telling it the refusal is final is what converts a wasted run into a
-redirected one.
-
-Known weakness: the rule id is itself a small leak. `denied_path_patterns` tells a model that
-paths are what got refused, which narrows the search if it chooses to search. The alternative
-was an opaque code, which would have made every operator debugging a run go and look the code
-up. That trade favours the operator, who reads these far more often than a model probes them.
-
-### Only the two most recent snapshots are carried in full
-
-Every action stays in history for the whole run. Observations do not: the two most recent are
-carried in full and everything older collapses to a line naming the page and its URL.
-
-An aria snapshot of this application is around five thousand characters. Twenty of them would
-be a hundred thousand characters of mostly dead screens, and the things that actually carry
-the reasoning, which are what the model did and what came back, would be a rounding error
-inside them. Two is the smallest number that still lets the model compare the screen before an
-action with the screen after it, which is the comparison that tells it whether the action
-worked.
-
-Rejected: summarize old observations with the model itself, or keep a rolling digest of what
-has been seen. Both are more informative than a URL. Both were rejected as a second place for
-the run to go wrong: a summarizer is another model call that can be wrong, can fail, and costs
-a request against a rate limit that a twenty step run is already brushing.
-
-Known weakness: a flow long enough that the relevant screen fell out of the window is a flow
-this loop will handle badly. If the model needs to remember what was on a form eight steps ago
-it cannot, and its only recourse is to navigate back and look, which costs two steps and may
-not be possible after an irreversible action. Nothing here detects that situation; it would
-show up as a run that gives up for no visible reason. The fix, if it happens, is to let
-finish-relevant details be written down as they are seen rather than to widen the window.
-
-## 0013. finish is verified, never trusted
-
-Phase 4, step 4.
-
-When the model calls finish it is making two claims, and neither is accepted on its word. The
-checkpoint is parsed into a Signal, which compiles any regex, and then evaluated against the
-live page. Every declared output has its ref converted to a durable locator and its extraction
-actually executed. Only if all of that succeeds does a SuccessResult exist.
-
-The checkpoint case is the obvious one. A checkpoint is asserted on every future replay of the
-capability, unattended, as the sole test of whether the run worked. A checkpoint that has never
-once held is not a weak assertion, it is a guess, and it will be wrong in exactly the same way
-every time it runs. Checking it costs one evaluation against the page already on screen.
-
-Verifying the extractions is the part worth arguing for, because it is easy to leave out. An
-output is a promise about what the caller receives. A declared output that cannot be read from
-the very page it was declared on is broken before replay has run once, and the failure will
-surface later, in production, as a capability that reports success and returns nothing. Running
-the extraction here converts that into a sentence the model is told immediately, while it is
-still looking at the screen and can point somewhere better.
-
-Rejected: trust finish and let phase 6 discover the problem on the first replay. It is less
-code here and replay has to handle extraction failure anyway. It was rejected because the two
-failures are not the same size. At discovery the cost is one retry. At replay the capability
-has been reviewed, approved and invoked by an agent against a live banking system, and the
-bad news arrives with the run half done.
-
-Known weakness: verification proves the checkpoint holds NOW, not that it discriminates. A
-model that picks a string present on every page in the application, such as the footer, gets a
-checkpoint that passes here and passes on every future replay regardless of where the flow
-ended up. Nothing detects that. The honest fix is to evaluate a candidate checkpoint against an
-earlier observation as well and reject it if it held there too, which is a phase 9 job.
-
-## 0014. The model declares, the schema polices
-
-Phase 4, step 4.
-
-Inputs and outputs are declared by the model at finish, not inferred from the run. The model
-is the only participant that knows which of the values it typed came from the goal and which
-it read off the screen, so inference would be guesswork. What keeps that honest is that every
-declaration passes through the same Pydantic validators the artifact schema uses: names must be
-snake_case, a parameter marked pii cannot carry an example, a required input nothing references
-is rejected, and an output must actually extract.
-
-The division is deliberate. The model supplies intent, which it alone has. The schema supplies
-constraint, which it enforces identically every time and cannot be talked out of. Neither is
-asked to do the other's job.
-
-Rejected: infer parameters by diffing typed values against the goal text. It needs no
-cooperation from the model and cannot be lied to. It was rejected because the mapping is
-genuinely ambiguous: a member id typed into a field might be a parameter, or it might be a
-constant the flow always uses, and the two are indistinguishable from the outside. A wrong
-inference produces a capability that is silently hardwired or silently over-parameterized. The
-diff still runs, as a warning in the transcript, which is the right weight for a heuristic.
-
-Known weakness, and this is the sharp one. A parameter that is genuinely used but wrongly
-typed passes every validator in the system. Declare `initial_deposit` as `string` when it is a
-currency, or `member_id` as `integer` when the application zero pads it, and nothing objects:
-the name is valid, it is referenced by a step, it is not sensitive, and the run succeeded. The
-type is a promise to the caller about what to pass and what comes back, and it is checked by
-nothing at discovery time. It surfaces on the first replay with a real value, as a validation
-error on a screen nobody expected, or worse as a lookup that silently finds the wrong record.
-Closing it means replaying the capability with a second set of inputs before approving it,
-which is what the draft to approved gate in the stretch goals is actually for.
-
-## 0015. A blocked action is fed back, not fatal
-
-Phase 4, step 4.
-
-A refused action returns a tool_result telling the model the direction is closed. The run ends
-only after three CONSECUTIVE refusals, and the counter resets on any action that succeeds.
-
-A single block is usually the model being reasonable and wrong. It sees a link to the fault
-console, or tries a URL it guessed from a pattern, and policy says no. That is the guardrail
-working exactly as intended, and it carries information the model can use: this route is
-closed, take another. Ending the run there would throw away a discovery that is otherwise
-going fine, and would make the policy gate look like a failure mode rather than a boundary.
-
-Three consecutive is the signal that something else is happening: the model has decided the
-blocked route is the only route and is now trying variations of it. That is not progress and
-more turns will not produce any, so the run stops with PolicyBlockedResult naming the rule.
-Consecutive rather than cumulative matters, because a run that hits an early dead end, backs
-out and completes the goal is a successful run, and counting its one block against it forever
-would be wrong.
-
-Rejected: terminate on the first block, on the grounds that anything touching a boundary is
-suspect and a person should look. It is defensible in a stricter setting. It was rejected
-because it makes the guardrail expensive to have: every over-cautious allowlist entry becomes
-an abandoned run, and the pressure that creates is to loosen the allowlist, which is the
-opposite of what anyone wants.
-
-Known weakness: three consecutive is a heuristic with no evidence behind it. It is small
-enough to catch a loop quickly and large enough to survive two honest mistakes, which is a
-judgement rather than a measurement. It is also per run rather than per rule, so three
-different rules refusing once each looks identical to one rule refusing three times, when the
-first is much more likely to be a confused model and the second a determined one.
-
-## 0016. Gemini, chosen on cost, made cheap to reverse by the protocol
-
-Phase 4, step 4. See also 0008, which records the API surface within Gemini.
-
-The provider moved from Anthropic to Gemini for cost. Gemini has a usable free tier, this is a
-take home rather than a funded system, and a discovery loop that burns twenty multimodal turns
-per run makes that difference concrete rather than theoretical.
-
-What made it a cheap decision to make, and the reason it is recorded as a decision at all, is
-that the `ModelClient` protocol had already confined every provider shape to one module. The
-switch touched `client.py` and nothing else: no change to the loop, the tools, the transcript,
-the prompt or any test, because none of them had ever seen a provider type. The protocol was
-not built in anticipation of this, it was built so `ScriptedClient` could substitute for a real
-model, and the portability fell out of it. That is the argument for the seam, and it is worth
-more than the argument for either provider.
-
-Rejected: staying on Anthropic and accepting the cost, or building an abstraction over both
-and choosing at runtime. The first is a real option and would have meant no work at all. The
-second was rejected outright as the kind of premature generality design rules section 8 warns
-about: two providers behind one interface, with one of them never exercised, is an interface
-designed from imagination.
-
-Known weakness: a free tier model is a weaker model. It is likelier to need more turns to
-reach the same goal, likelier to misread a dense table, and likelier to point at the wrong ref,
-which `describe()` will faithfully convert into a perfect locator for the wrong control. The
-practical consequence is that `max_steps` at 25 may prove too tight and need raising, and that
-a run failing is weaker evidence about the system than it would be with a stronger model. The
-rate limit compounds it: the free tier sits near ten requests a minute, which is why the client
-retries 429 with backoff, and a long run pauses rather than fails.
+Notes on the choices I made while building this, written at the time rather than afterwards.
+Each entry says what I picked, what I turned down, and where the choice is weak. REPORT.md is
+put together from these. Anything I stubbed, mocked or left out is noted here when it happens.
+
+## 0001. Python, the Playwright sync API and Pydantic v2
+
+Stage 0.
+
+Python 3.11, Playwright's sync API for the browser, Pydantic v2 for every schema, and the model
+SDK only inside the discovery loop. The capability format matters more than anything else here,
+and Pydantic gives one definition that parses, validates at runtime and exports the JSON Schema
+in `schemas/`. So the schema a reviewer reads is the one the code enforces. Python also keeps the
+discovery loop, replay and the Flask target app in one language.
+
+Rejected: TypeScript with Playwright and Zod. It was a close call. Playwright's TypeScript
+binding gets features first, Zod infers types from the same declaration, and the compiler would
+check the result union instead of an optional tool.
+
+Weak spots: Python typing is only advisory, so `mypy --strict` has to be run on purpose and only
+checks what is annotated. And the sync API blocks the calling thread, which makes the handoff
+harder: the browser has to stay open and usable by a person while Python is not calling into it.
+That is why the control lease had to be its own explicit object (stage 7).
+
+## 0002. Real error states and simulated faults come from different places
+
+Stage 1.
+
+Not found, permission denied and validation errors are real. They come from the seed data and
+the form input, with no switch: ask for a member that was never seeded and you get the not found
+page, ask for 100003 and you get permission denied, submit a deposit of zero and the server
+rejects it. The four faults on `/dev/faults` (maintenance page, session expiry, slow response,
+server error) are simulated: turned on by hand, kept in the Flask session, fired once. The line
+is whether the condition belongs to the data or to the runtime.
+
+Rejected: make all seven switches on the fault page. Simpler, one place to look. But a "not
+found" made by a switch proves nothing. Replay would be detecting a flag the test set, not
+something the app did, and telling a business outcome apart from a failure is the exact thing
+the brief says people get wrong.
+
+Weak spots: faults fire on GET only, so a session expiring in the middle of a form POST, probably
+the most realistic version, cannot be produced. Firing on a POST throws away the submission and
+leaves Continue with nothing to go back to. Faults live in the session cookie, so only the browser
+that set one sees it. And with no database there is no way to fail halfway through a transaction.
+
+## 0003. Three choices about the shape of a capability
+
+Stage 2.
+
+### Outputs are declared, not read in a step
+
+Reading a value is declared once, on `OutputSpec.extraction`. Steps only act. That keeps
+everything a caller gets back in one place, lets replay read outputs without walking the steps
+again, and means a tenant whose confirmation page puts the account number somewhere else needs
+an `output_overrides` entry, not a new recording.
+
+Rejected: an `extract` step type. Smaller, one list to run, and it makes the order of reads
+explicit.
+
+Weak spot, and a real one: every output is read at the same moment, after the last step. A value
+that is only on screen halfway through, like a reference number that disappears on the next page,
+cannot be captured. The fix would be an `extract_after_step` field, not an extract step.
+
+### Checks exist per step and for the whole flow
+
+`Step.postcondition` checks that one action did what it should. `Capability.checkpoint` checks
+that the whole flow reached the goal. They fail differently: a failed postcondition points at one
+step, while a failed checkpoint after every step passed means the flow is wrong as a whole. It is
+also why an irreversible step must have a postcondition, because it has to prove what it did right
+away, not at the end.
+
+Rejected: a checkpoint for the whole flow only. Less to write and arguably all a caller cares
+about.
+
+Weak spot: two places to be wrong, and they can repeat each other. In the test fixture the last
+step's postcondition and the checkpoint check the same text, and nothing flags it.
+
+### Expected outcomes belong to each capability
+
+`BusinessOutcomeSpec` hangs off the capability. "Member not found" only makes sense for a flow
+that looks a member up, and how you detect it depends on one screen. A shared registry would need
+to be keyed by app and screen anyway. Keeping them local also means one file lists every answer a
+caller can get.
+
+Rejected: a shared list of outcome codes that capabilities point to. It would keep
+`member_not_found` meaning the same thing everywhere and avoid writing the same check many times.
+
+Weak spot: that duplication. Ten capabilities on the same app will each declare
+`member_not_found` with their own check, nothing makes them agree, and when the app's wording
+changes they break one by one. Moving to a shared list later is mechanical.
+
+## 0004. Anything that can be caught from the file is caught when it is built
+
+Stage 2.
+
+The stage 2 validators all follow one rule: if a problem can be seen from the capability file
+alone, the schema rejects the file instead of leaving replay to find it. Regexes are compiled on
+construction. An outcome that says it checks after step 9 in a six-step flow is rejected, as is a
+recovery for a step that does not exist, a required input nothing uses, a risky step with no check
+after it, and a sensitive input with an example value.
+
+The reason is approval. A person reviews a draft, approves it, and from then on it runs with
+nobody watching. If it then breaks at step four, the review could never have caught it, and the
+failure turns up against a live banking system instead of at someone's desk.
+
+Rejected: check lazily and let replay report a bad pattern as a normal failure. Less schema code,
+and replay has to handle errors anyway. But a failure at replay is harder to diagnose, comes with
+a half-finished flow, and for an irreversible step may come after the damage.
+
+Weak spots: this only catches a file that contradicts itself, never a file that no longer matches
+the app. A locator for a button renamed last week is still valid. Also, most of these rules cannot
+be expressed in JSON Schema, so anything validating against `schemas/capability.schema.json`
+alone will accept files Pydantic rejects. And at the time `ParamSpec.pattern` was not compiled at
+build time, which it should be.
+
+## 0005. A screen-shape check, added before anything used it
+
+Stage 2.
+
+`SignalKind.aria_matches` and `Signal.aria_template` let a check compare the shape of a screen
+instead of looking for a string, and `SurfaceFingerprint.aria_template` records that shape. A text
+check asks "is this string somewhere on the page". A shape check asks "is this the screen I
+recorded". For a checkpoint the second is the real question: "Sub-Account Opened" in a hidden
+template or a breadcrumb passes `text_present` while the flow is nowhere near done. For tenants, a
+renamed button is a text change but an extra confirmation step is a shape change.
+
+I added it before anything needed it because it was free then. No capability had been saved yet.
+Once approved capabilities exist, the same change needs a version bump and a migration.
+
+Rejected: wait until the recorder needs it. Normally the right call, since a field designed before
+anyone uses it is often the wrong shape. But a wrong field on an unused schema is a free edit,
+while a right field added later is a migration.
+
+Weak spots: shape checks break on harmless markup changes, like a heading wrapped in a new div, so
+they belong on checkpoints and fingerprints, not step postconditions. Nothing enforces that. And
+templates are only checked as valid YAML. Whether a template describes a real screen is only found
+out at replay, because Playwright has no public parser for its template format.
+
+## 0006. Where describe() lives, and why the XPath tiers are not a CSS fallback
+
+Stage 3.
+
+### describe() belongs to the surface
+
+Turning a snapshot ref into a lasting `LocatorBundle` is a method on `Surface`. It needs the
+snapshot that produced the ref and the live page, to check that each candidate matches exactly
+one element right now. A recorder working from a transcript later has neither, because refs are
+dead after the next snapshot. It also splits the work well for other surfaces: a desktop surface
+would write its own `describe()` against UI Automation, and the recorder just collects bundles.
+
+Rejected: keep the surface thin and do this in the recorder. Cleaner layers on paper, but the
+recorder would then need a live handle back into the surface to check candidates, or it would save
+unchecked bundles. An unchecked bundle is a guess that fails at replay instead of at recording.
+
+Weak spots: the surface now reads the page and interprets it, and `web.py` grew past the 300 line
+guideline. A second surface would reimplement every tier. If a third ever shows up, tier selection
+should move into shared code that takes an `Observation`.
+
+### XPath that names a relationship is not the same as a CSS selector
+
+Tiers 2 and 3 compile to XPath, but they are not brittle like the CSS tier. What matters is what
+the expression names. Tier 2 compiles to `//tr[./*[normalize-space(.)="Nickname"]]` and then asks
+`get_by_role` for the textbox inside: the field in the row labelled Nickname. That survives
+renamed ids, restyling and a different widget with the same role. The CSS tier compiles to
+`#ctl00_ContentPlaceHolder1_txtNickname`, one generated id. This matters because the tier that
+matched is recorded on every run. If XPath counted as brittle, every tier 2 match would look like
+degradation and nobody would read the signal.
+
+Rejected: build tiers 2 and 3 from Playwright's `filter` and `has`. Reads better. But
+`filter(has_text="Deposit Accounts")` matched two tables here, because an outer table also contains
+the text, while `ancestor::table[1]` matched one. "Nearest enclosing table" needs an axis, and the
+locator API has none.
+
+Weak spots: XPath 1.0 has no escape character, so quoting goes through a `concat()` helper.
+`normalize-space(.)` on a row matches all text inside it and could over-match on a busier page.
+And it names a `tr`, so it is HTML-specific.
+
+### A conflict found here, resolved in 0007
+
+A control whose only possible locator is CSS could not be recorded. The one real case is the span
+with an inline onclick: it has no role, so `get_by_role` cannot see it and tiers 1 to 3 fail. But
+`LocatorBundle` refuses a CSS primary. Both rules are on purpose, so `describe()` raised
+`LocatorUnresolved` and I wrote the conflict down instead of quietly loosening a validator. The
+options were to allow a brittle primary with a reason, to fix the app (in real life, ask a vendor
+and wait), or to add a tier that finds controls by visible text. The third was taken in 0007.
+
+## 0007. A visible text tier
+
+Stage 3.
+
+`TextRelationLocator` finds a control by its visible text, optionally inside a named container,
+and can be a primary. The tier order is now role_name, label_relation, container_ordinal,
+text_relation, css_fallback, and only CSS is still refused as a primary. The onclick span now
+records as a text_relation primary and resolves to the same element.
+
+Allowing a CSS primary would have meant approved capabilities depending on
+`#ctl00_ContentPlaceHolder1_lnkOpenSub`, which changes whenever someone reorders the page. Fixing
+the app works when you own it, but in the real setting the app belongs to a vendor. Visible text
+is the handle a person would use, which is the standard for the other tiers too.
+
+It sits below container_ordinal. Role and name is something the app promises to screen readers,
+and container plus position survives copy changes. Text survives neither rewording nor
+translation, so it only gets used when the accessibility tree has nothing better.
+
+Rejected: a tier matching text plus position among siblings, which would survive rewording. Too
+early: it needs a sibling index, which is as brittle as an ordinal without the container, and only
+one control in the app needs this tier.
+
+Weak spot: text is exactly what rebranding changes. The brief describes the same vendor product
+"configured, branded, and versioned differently" across many institutions. A text_relation
+primary is the most likely locator to need a per-tenant override, and it fails quietly: the button
+is still there and still works, but someone renamed "Open Sub-Account" to "New Sub-Account".
+`VariantOverride.step_overrides` can hold a replacement, and since the winning tier is recorded on
+every run, text_relation primaries are the first place to look when an upgrade breaks things.
+
+## 0008. Gemini through the Interactions API, without server-side state
+
+Stage 4. (Partly reversed in 0018.)
+
+Switching from Anthropic to Gemini was a given (see 0016). The decision here was which Gemini API
+to use. I checked the current docs: `client.models.generate_content` still works, but its
+function calling guide is now under a Legacy heading, and the Interactions API is the recommended
+path for new projects since June 2026. Building a new client on the legacy API would be hard to
+justify in six months.
+
+The Interactions API keeps conversation state on the server by default. I planned to pass
+`store=False` and send the whole transcript every turn, because the recorder compiles the
+transcript so it has to be ours, evidence has to live in `evidence/` rather than on a vendor's
+server, and `ModelClient.complete(system, messages, tools)` is stateless, which is what lets
+`ScriptedClient` stand in for the real model.
+
+Rejected: server-side state with `previous_interaction_id`. Less data per turn, and what the API
+is built around.
+
+Also rejected, and ruled out by the brief for this step: the OpenAI compatibility endpoint.
+
+Weak spot: the translation code was written against the SDK's type definitions and had never
+made a live call. The first real run was where it would be tested, and it did need fixing (0018).
+
+## 0009. The error pages are on the allowlist
+
+Stage 4.
+
+`config/policy.json` allows `/maintenance`, `/maintenance/continue` and `/session-expired`. That
+looks wrong, since they are all error states. But the maintenance recovery works by landing on the
+notice and clicking Continue. If those paths were denied, the policy would block the recovery: the
+run lands on the page, the check refuses the URL it is already on, and a recoverable condition
+becomes a policy violation. Denying a page you will land on anyway does not stop you landing there,
+it only stops you doing anything about it. The allowlist describes where a run is allowed to be,
+not where things are going well.
+
+Rejected: deny the error pages and let known recovery steps bypass the policy. The allowlist looks
+cleaner. But a bypass is a hole, even with a good reason, and the policy only means something if
+nothing can get around it.
+
+Weak spot: the list now mixes normal routes with error pages and does not say which is which. A
+`reason` field per pattern would fix that, at the cost of the file no longer being a plain
+`PolicyConfig` dump, which is what gives free validation on load.
+
+## 0010. The model gets no wait tool
+
+Stage 4.
+
+The model has eight tools and none of them waits. The prompt says so, because a model trained on
+browser automation will expect one.
+
+Waiting already happens in the surface, with limits. `resolve()` retries every tier within a time
+budget before deciding nothing matched, and `act()` waits for the page to settle before returning.
+A wait tool would duplicate that.
+
+The bigger reason is that a model that is unsure has an easy way out in waiting. It is cheap, never
+fails, and puts off the decision. The failure is a run that spends eight of its steps waiting and
+runs out before trying another route. Without the tool, it has to look again or do something
+different, and both give it new information.
+
+Rejected: a short capped wait for cases like a spinner the model can see. A real case, but seeing a
+spinner should make the model look again, which costs the same turn and returns a real
+observation.
+
+Weak spot: this only works while the surface's waiting is right. If some future surface updates
+without any change in the accessibility tree, the model will look, see the same screen and give
+up. The fix then is better waiting in the surface, not a tool.
+
+## 0011. The model points at refs and never writes a locator
+
+Stage 4.
+
+No tool the model sees takes a `LocatorBundle` or anything that could carry one. `finish` takes a
+`ref` where `OutputSpec` takes a locator, and its checkpoint only offers the check types that need
+no locator. The model says which element it means by ref, and `describe()` picks and verifies the
+locator before anything is saved.
+
+Choosing a locator tier decides whether a recording still works next month, and it is the first
+thing the brief grades. If the model wrote locators, that choice would live in the prompt, where the
+model can ignore it or make up a plausible CSS selector. In `describe()` it is Python, and every
+candidate is checked against the page. It is the same reason the policy check lives in code.
+
+Rejected: let the model suggest a locator and have the surface check it. Not a bad design, and the
+model's reading of the page is useful. But a locator that checks out today is not the same as one
+that lasts. The model cannot know `#ctl00_ContentPlaceHolder1_lnkOpenSub` will break next release,
+and the tier order already encodes that.
+
+Weak spot: the model can still point at the wrong element, and `describe()` will build a perfect
+locator for it. The tiers guarantee the thing can be found again, not that it was the right thing.
+The checkpoint is also written by the model, so a run can be consistently wrong from start to end.
+
+## 0012. What the loop tells the model and what it leaves out
+
+Stage 4.
+
+### A refusal names the rule and nothing more
+
+When the policy refuses an action, the model is told it was refused, which rule refused it, and
+that the refusal is final. It is not told which pattern matched. `PolicyViolation` keeps `rule` and
+`reason` separate so the loop can pass one and drop the other, and a test checks the pattern never
+reaches a tool result.
+
+A model told the boundary will explore it. Told that `/dev/faults` matched `^/dev(/.*)?$`, it will
+try `/dev` without the slash, or a redirect. That is not malice, just the model using what it has,
+and every attempt is a wasted step.
+
+Rejected: say only "refused". Leaks less. But a bare refusal looks like a temporary error, and the
+right response to a temporary error is to retry, which is what the three-block limit exists to
+catch.
+
+Weak spot: the rule name is a small leak. `denied_path_patterns` tells the model it was the path.
+An opaque code would leak less but make every person debugging a run look it up.
+
+### Only the last two snapshots are sent in full
+
+Every action stays in the history. Only the two latest observations are sent in full, and older
+ones shrink to a line with the page name and URL. A snapshot of this app is about five thousand
+characters, so twenty of them would bury what matters, which is what the model did and what came
+back. Two is the least that lets the model compare before and after an action.
+
+Rejected: have the model summarise old observations. More informative, but it is another model
+call that can be wrong, can fail, and uses up a rate limit a long run is already close to.
+
+Weak spot: if the model needs to remember a form from eight steps ago, it cannot, and has to go
+back and look, which may be impossible after an irreversible step. Nothing detects this. It would
+look like a run giving up for no visible reason.
+
+## 0013. finish is checked, not trusted
+
+Stage 4.
+
+When the model calls `finish`, the checkpoint is parsed into a `Signal` and evaluated against the
+live page, and every declared output is turned into a locator and actually read. Only if all of
+that works is there a success.
+
+The checkpoint is the only test on every future replay of the capability, with nobody watching. A
+checkpoint that has never once passed is a guess. Checking it costs one evaluation.
+
+Reading the outputs is easy to skip, which is why I call it out. An output that cannot be read
+from the page it was declared on is already broken, and without this check it would show up in
+production as a success that returns nothing. Checking here tells the model straight away, while
+it can still point somewhere better.
+
+Rejected: trust `finish` and let replay find problems. Less code. But at discovery the cost is one
+retry, and at replay the capability has been approved and is running against a live system.
+
+Weak spot: this proves the checkpoint passes now, not that it tells screens apart. A string that is
+on every page, like the footer, passes here and on every replay wherever the flow ends up. The fix
+is to also test the checkpoint against an earlier observation and reject it if it passed there too.
+Not built.
+
+## 0014. The model declares inputs and outputs, and the schema checks them
+
+Stage 4.
+
+The model declares inputs and outputs at `finish`. It is the only one that knows which typed
+values came from the goal and which it read off the screen. Every declaration goes through the
+same validators as a saved capability: snake_case names, no example on a pii input, no unused
+required input, and outputs that actually read.
+
+Rejected: infer parameters by comparing typed values with the goal text. Needs nothing from the
+model. But a typed member id could be a parameter or a constant, and you cannot tell from outside.
+A wrong guess gives a capability that is quietly hardwired or has parameters it should not. The
+comparison still runs, as a warning in the transcript.
+
+Weak spot: a parameter with the wrong type passes everything. Declare `initial_deposit` as a
+string or `member_id` as an integer when the app zero-pads it, and nothing objects. It shows up on
+the first replay with real values. The fix is replaying with a second set of inputs before
+approval, which is what the approval stretch goal is for.
+
+## 0015. A blocked action goes back to the model instead of ending the run
+
+Stage 4.
+
+A refused action returns a message saying that direction is closed. The run only ends after three
+refusals in a row, and the count resets whenever an action succeeds.
+
+One block is usually the model being reasonable and wrong, like trying a link to the fault page.
+That is the policy doing its job, and the model can use it. Ending the run there would throw away a
+discovery that was otherwise fine.
+
+Three in a row means the model has decided the blocked route is the only way and is trying
+variations. More turns will not help, so the run stops with `PolicyBlockedResult`. It is "in a row"
+and not a total, because a run that hits one dead end early and then finishes is a good run.
+
+Rejected: stop on the first block. Defensible somewhere stricter. But then every over-cautious
+allowlist entry ends a run, and the pressure becomes loosening the allowlist.
+
+Weak spot: three is a guess, not a measurement. It also counts per run, not per rule, so three
+different rules refusing once each looks the same as one rule refusing three times.
+
+## 0016. Gemini, for cost
+
+Stage 4. See 0008 for which Gemini API.
+
+I moved from Anthropic to Gemini because Gemini has a usable free tier, this is a take-home, and a
+discovery run can be twenty or more multimodal turns.
+
+It was cheap to do because `ModelClient` already kept everything provider-specific in one module.
+The switch changed `client.py` and nothing else: not the loop, the tools, the transcript, the prompt
+or any test. I built that interface so `ScriptedClient` could replace the model in tests, and the
+portability came along with it.
+
+Rejected: stay on Anthropic and pay, or support both and pick at runtime. The second is the kind of
+early generality I wanted to avoid: two providers behind one interface with one never used.
+
+Weak spot: the free model is weaker. It needs more turns, misreads dense tables more often, and
+points at the wrong ref more often, which `describe()` will turn into a perfect locator for the
+wrong control. A failed run says less about the system than it would with a stronger model. The
+free tier also allows about ten requests a minute, so the client retries 429s with backoff.
 
 ## 0017. The redactor cannot see inside a screenshot
 
-Phase 4, step 4.
-
-Every text write in the evidence writer is serialized first and redacted second, on the
-serialized string rather than on the object, so a sensitive value cannot survive in a field
-nobody remembered to redact. Screenshots bypass that entirely, because a PNG is bytes and the
-redactor reads text.
-
-This is a real hole in invariant 6 and it is stated here rather than left to be discovered. A
-screenshot of the member detail screen contains the member name, the account numbers and the
-balances, rendered as pixels, written to disk unmodified. In this project the data is
-fabricated, so the cost is zero. In the environment this stands in for, evidence directories
-would be full of regulated financial data in a form no redactor can touch.
-
-The options, none of which are built: do not capture screenshots at all, which loses the
-richer failure signal the brief asks for; capture them and treat the evidence directory as
-regulated data with the access controls that implies, which is what a real deployment would
-have to do anyway; or redact the image before writing it, by blanking the boxes of elements
-whose values came from parameters marked pii, which the Observation already carries the
-geometry for. The third is genuinely feasible here and is the interesting one, because
-`ObservedElement.box` exists precisely because bounding boxes were recorded. It is phase 8 work
-and is noted there rather than done here.
-
-## 0019. The recorder carries locator bundles through unchanged
-
-Phase 5.
-
-`compile` copies `ActionRecord.bundle` into the compiled `Step` verbatim. It does not re-rank
-the tiers, does not re-run `describe`, and does not try to improve anything.
-
-The reason is that a bundle is a claim about one page at one instant, and it was verified at
-that instant: `describe` checked every candidate tier against the live page before the bundle
-existed at all. By the time the recorder runs, that page is gone. Re-deriving would mean
-deriving against whatever the browser happens to be showing now, or worse against no page at
-all, and the result would be a locator that has never been checked against anything. The one
-moment a locator can be known to be true is the moment it is built, which is why invariant 9
-puts the conversion at the action rather than at the recording.
-
-Rejected: re-derive at compile time so the bundle reflects the final state of the page, which
-would let a later step's locator benefit from the page having settled. It was rejected because
-it inverts the guarantee. A bundle built during the action is one that resolved uniquely then;
-a bundle built afterwards is a guess dressed as a recording, and nothing downstream could tell
-the two apart.
-
-Known weakness: the bundle is only as good as the moment it was captured, and the recorder has
-no way to notice a bad one. If `describe` picked a locator that happened to be unique on that
-render but is not stable, for instance the balance cell in the real recorded run, whose
-`role_name` primary is the balance figure itself, the recorder copies that mistake through
-faithfully. Nothing here inspects a bundle for whether it names something that will still be
-true next month. That is a real gap and the sharpest one in this phase.
-
-## 0020. An unmatched declared input is a compile error, not a warning
-
-Phase 5.
-
-If a declared input cannot be matched to any recorded literal, compilation fails with
-`INPUT_MATCHES_NO_LITERAL` rather than emitting a warning and continuing.
-
-An input is a promise to the caller: supply this and it will be used. An input the flow never
-consumes is a false promise, and a caller passing a member id to a capability that ignores it
-gets a confident result computed from whatever was baked in at record time. That is worse than
-an error, because it looks like success.
-
-The schema would catch it anyway. Cross field validator 7 rejects a required input that no
-step references, so the artifact could never be constructed regardless. Failing here rather
-than there is purely about the message: the validator can say only that an input is
-unreferenced, while the compiler knows why and can say that no recorded step used a value at
-all, or that two inputs could not be told apart.
-
-Rejected: warn and drop the unmatched input, producing a valid capability with one fewer
-parameter. Tempting because it always yields an artifact. Rejected because it silently changes
-the contract the model declared, and the person reading the capability later would have no way
-to know an input had been removed on their behalf.
-
-Known weakness: the matching itself is inference, not fact. The model types a value and never
-says which parameter it came from, so the recorder reconstructs the mapping from the example
-field first and the goal text second. Where that leaves a real choice it refuses, which means
-a legitimate two parameter flow whose values do not appear in the goal will fail to compile
-until someone adds examples. That is the right way round, but it is a cost.
-
-## 0021. known_outcomes is left empty rather than populated with plausible defaults
-
-Phase 5.
-
-The compiled capability declares no business outcomes at all, and the compile report says so.
-
-The target application has three real ones: no member found, permission denied, and validation
-rejected. It would be easy, and would look thorough, to add them to every capability compiled
-against this app. It would also be fabrication. The run being compiled never encountered any
-of them, so nothing in the transcript is evidence that the detection signal for any of them is
-correct. A declared outcome carries a Signal that replay will evaluate on every future run, and
-a signal nobody has ever seen match is the same kind of guess as a checkpoint that has never
-held, which DECISIONS 0013 refuses for exactly this reason.
-
-design rules section 10 also says evidence is produced by real runs and never generated. An
-outcome declaration is a claim about what the application does; inventing one is generating
-evidence with extra steps.
-
-Rejected: seed the outcomes from the target app's known failure screens, since we wrote the app
-and know them. Rejected because it does not generalize past the one application we happen to
-have written. The real environment is a vendor product nobody here has the source of, and a
-recorder that only works when you already know every error screen is not a recorder.
-
-What it costs, stated plainly: a capability compiled from one happy path will treat a
-"no such member" screen as a checkpoint failure rather than as the business outcome it is.
-That is the exact confusion invariant 5 exists to prevent, and this phase ships with it
-present. The fix is more recordings, one per outcome, merged into the artifact, or a human
-adding the declarations by hand. Both are phase 9 or later.
-
-## 0022. status is always draft on first compile
-
-Phase 5.
-
-Every compiled capability comes out `draft`, and there is no argument that changes it.
-
-A capability that has been compiled has run exactly once, forwards, with the model in the loop
-making every decision. Nothing about that establishes it replays: the whole point of the
-artifact is that replay is a different execution path, with no model, resolving locators from
-recorded bundles rather than from a live snapshot. The first thing that could justify
-`approved` is a successful replay, and phase 6 has not happened.
-
-Rejected: mark it approved when the discovery run verified its own checkpoint and outputs,
-since that verification did happen against the live page. It is a real signal and it is why
-the artifact is worth having. It is not the same signal: verification proves the finish payload
-described the page the model was standing on, not that a locator recorded mid-run resolves on
-a fresh load, which is the thing that actually breaks.
-
-Known weakness: nothing in this repo yet moves a capability from draft to approved, so the
-field is currently write-once and decorative. It becomes load bearing the moment unattended
-replay exists and has to refuse anything not approved, which is the confidence and approval
-stretch goal.
-
-## 0023. outcomes are evaluated before postconditions
-
-Phase 6.
-
-Each step is judged in a fixed order: the policy gate, then resolve and act, then recoveries,
-then declared business outcomes, then the step postcondition. The order is the decision. The
-part that matters is that a declared outcome is checked before the postcondition, not after.
-
-A "no member record matches" screen fails the postcondition of the step that submitted the
-search, and it fails the run checkpoint too. If the postcondition were asked first, every
-not-found lookup would be reported as a checkpoint failure: exit 40, a human paged, a DOM
-snapshot written, all to deliver an answer the system already had and could have returned in
-milliseconds. That is invariant 5 violated in the most expensive direction, because the cost
-lands on a person.
-
-Recoveries come first for the same reason in a different shape. An interstitial that replaced
-the page makes every subsequent question meaningless: the postcondition does not hold, no
-outcome signal matches, and the truthful description of the state is "something got in the
-way". Clearing it before anything is judged means the judgment is about the flow rather than
-about the interruption.
-
-Rejected: evaluate outcomes only after the last step, since that is where the run's answer
-normally is. It reads cleanly and it is wrong. A not-found screen appears at step 3 of 4, and
-the remaining step clicks a control that no longer exists. The run would fail with a locator
-error at step 4 and the real answer, which was on screen one step earlier, would never be
-reported. Outcomes are checked after every step because the flow can end early.
-
-Known weakness: `check_after_step` is an exact step, not a lower bound: an outcome declared for
-step 3 is checked after step 3 and at no other step, while `None` means after every step. (An
-earlier version of this entry said lower bound, which the engine never did.) So an outcome that
-can appear at more than one point in a flow has to be declared with `None`, or it will be missed
-at the steps it does not name. 0045 is what that looks like when it happens.
-
-## 0024. irreversible steps get zero retries
-
-Phase 6.
-
-`_retry_budget` returns 0 for any step marked `risky_irreversible`, whatever its WaitSpec asks
-for. A timeout on such a step is never retried; it escalates as `needs_human`.
-
-From outside the browser, a transient timeout and a completed action that simply did not
-report back look identical. There is no observation that separates them, because the evidence
-that would separate them is on the far side of the thing that timed out. Retrying resolves the
-ambiguity in the direction that opens the account twice, transfers the funds twice, or files
-the request twice. Escalating resolves it in the direction that costs a human two minutes.
-The asymmetry is not close, so the choice is not close.
-
-Rejected: read the page after the timeout and retry only if the action clearly did not land.
-This is the tempting one, because usually it works. It fails exactly when it matters: the
-page you would read is the page that was not responding, and a confirmation screen that is
-slow to render is indistinguishable from one that will never render. A check that is reliable
-except during the failure it exists to handle is not a check.
-
-Rejected: make the retry budget configurable per step so an operator can opt in. The operator
-opting in is not the person who eats a duplicated transfer, and a knob like this gets turned
-during an incident, which is the worst possible moment to be making that trade.
-
-Known weakness: a safe step can still be retried into a duplicate if it was misclassified at
-record time. Risk classification comes from the policy's `risky_control_names` and the
-recorder's judgment, and neither is infallible. The mitigation is that the same classification
-also drives the approval gate, so a misclassification is visible in the artifact rather than
-buried in engine behaviour.
-
-## 0025. fingerprint mismatch is a hard stop
-
-Phase 6.
-
-If the recorded surface fingerprint does not match what pre-flight sees, the run stops before
-step 0. It does not attempt the flow and report drift afterwards.
-
-A fingerprint mismatch means the artifact is being replayed against something other than the
-application it was recorded against. There are two ways that happens and both argue for
-stopping. Either it is a different tenant's variant, in which case the correct move is to
-select the override for that variant rather than run the base steps and hope, or the
-application changed under the artifact, in which case the recorded locators describe a screen
-that no longer exists. Continuing means executing a sequence of steps whose meaning is
-unknown, against a real back-office system, on someone's real account.
-
-The cost of stopping wrongly is a human confirming that a cosmetic change is cosmetic. The
-cost of continuing wrongly is an action taken on the wrong screen. In a banking back office
-those are not comparable.
-
-Rejected: warn and continue, gated on how much of the fingerprint matched. A partial-match
-threshold is a number nobody can defend. Two of three landmarks matching is not evidence that
-the third is unimportant; it is more likely evidence that the page changed in the one place
-the artifact was not looking.
-
-Known weakness: the fingerprint is title, brand text, landmark signals and an aria template of
-the chrome. Chrome is the part of a legacy app most likely to be reskinned and least likely to
-change what the flow means, so this will produce false stops on a harmless rebrand. The
-intended answer is a variant override recorded for the reskinned surface, which turns a false
-stop into a declared difference. There is no automatic re-fingerprinting, deliberately: a
-system that quietly updates its own drift detector no longer has one.
-
-## 0026. draft capabilities do not replay unattended
-
-Phase 6.
-
-`check_approval` refuses to run anything still marked `draft` unless the caller passes
-`--allow-draft`. The refusal happens before the browser is touched.
-
-Per 0022, a compiled capability has been executed exactly once, forwards, with a model making
-every decision from a live snapshot. Replay is a different execution path: no model, locators
-resolved from recorded bundles against a page loaded fresh. Nothing about the discovery run
-establishes that the second path works. The most common way it fails is the most boring one, a
-locator that was unique in the state the model was standing in and is not unique on a clean
-load, and the only thing that finds it is a replay.
-
-So the flag is not ceremony. It marks the boundary between "this has been observed to work
-once, in a mode that is not this mode" and "this has been observed to work in the mode you are
-about to run it in".
-
-Rejected: allow draft replay but downgrade the result to advisory. Results are consumed by
-exit code, and an advisory success is exit 0. Anything reading the exit code, which is the
-documented integration point, cannot see the caveat.
-
-Known weakness: nothing in the repo promotes draft to approved. `--allow-draft` is how every
-replay in this phase was run, including the ones in `evidence/`, so in practice the gate is
-currently a speed bump for a human rather than a control on automation. Closing it means a
-promotion path: N successful replays against a known surface, recorded on the artifact, and a
-human signing the transition. That is the confidence and approval stretch goal, and it is not
-in this submission.
-
-## 0027. the member_not_found and member_restricted outcomes were added by hand
-
-Phase 6.
-
-Per 0021, the recorder cannot declare an outcome it never saw, and the discovery run only ever
-saw member 100001, which exists. So the compiled 1.0.0 artifact shipped with `known_outcomes`
-empty. Both outcomes now in the artifact were written by a human against the live screens:
-`member_not_found` in 1.1.0, `member_restricted` and the interstitial recovery in 1.2.0.
-
-`Provenance.human_edited` is set to true on both. That flag exists so a reviewer can tell,
-without diffing against a transcript, which parts of an artifact a model actually observed and
-which parts a person asserted. Those two have different failure modes and deserve different
-levels of trust, and hiding the difference would make the provenance record decorative.
-
-The weakness this introduced, stated when it was introduced: a hand-added detect signal is a
-claim about a screen nobody re-checked. If the text does not match, the outcome never fires,
-and the run reports a checkpoint failure instead. The declaration looks correct in the
-artifact and does nothing at runtime, which is worse than an obvious error.
-
-That weakness is now closed for both. `test_unknown_member_is_a_business_outcome_not_a_failure`
-and `test_restricted_member_is_a_business_outcome_not_a_crash` drive real replays against the
-live app and assert the outcome codes, and
-`test_interstitial_is_dismissed_and_the_run_still_succeeds` arms the real fault and asserts the
-recovery is named in `recoveries_applied`. Every hand-authored declaration in the artifact is
-now exercised by a replay that would fail if the signal were wrong. The general point survives:
-a hand-added declaration is unverified until something hits it, so it needs a test at the
-moment it is written, not later.
-
-**Update, final gap closure.** Curated run `07-replay-permission-denied` replays the lookup
-capability for the restricted member 100003 and returns `member_restricted` with exit 10, so the
-signal is now verified in the evidence a reviewer reads, not only inside the test suite. Run
-`08-replay-validation-rejected` does the same for `validation_rejected` in the sub-account
-capability, after the fixes in 0045.
-
-That confirms the lookup capability only. The same lesson was not applied to
-`open-member-subaccount-1.0.0.json`, which was hand-authored later with three outcomes of its
-own and no test for any of them. None of the three could fire. See 0045, where all three are
-now fixed and tested.
-
-## 0028. navigate steps store a path, not a URL
-
-Phase 6.
-
-A navigate step records `/member/{member_id}`. The host comes from `surface.base_url` at replay
-time, and the engine joins them.
-
-The recorder originally stored the observed URL whole, so the first artifact carried
-`http://localhost:8080/`. That pins the capability to the machine that recorded it. The brief
-asks for one artifact to run against the same application deployed differently, which is the
-ordinary case in this domain: the same vendor console at a different host per credit union.
-An absolute URL makes that impossible without hand-editing the artifact, which defeats the
-point of having one.
-
-Found by a replay test that repointed `base_url` at a random port and watched the run navigate
-to port 8080 anyway. Fixing the recorder and recompiling from the stored transcript reproduced
-the committed 1.0.0 byte for byte apart from that field, which is the check that the fix
-changed one thing.
-
-Known weakness: only the prefix is stripped, so a discovery run that wandered onto a different
-host would still record an absolute URL for that step. The policy gate's `allowed_hosts` makes
-that hard to reach rather than impossible, and nothing currently rejects an artifact whose
+Stage 4. (Addressed in part by 0037.)
+
+Every text write in the evidence writer is serialised first and redacted second, so a sensitive
+value cannot hide in a field nobody thought to redact. Screenshots skip that, because a PNG is bytes
+and the redactor reads text. A screenshot of the member page shows the name, account numbers and
+balances. The data here is made up, but in a real deployment the evidence folders would be full of
+financial data no text redactor can touch.
+
+Options: no screenshots, which loses the richer failure signal the brief asks for; treat evidence
+as regulated data with access controls, which a real deployment would need anyway; or black out
+fields filled from pii parameters before writing. The third is doable because observations record
+bounding boxes. Done in stage 8, see 0037.
+
+## 0018. The conversation is continued on the server after all
+
+Stage 4, after the first real run. Reverses part of 0008.
+
+The first run against the real API failed. The Interactions API does not accept `model_output` or
+`function_call` as input items, so a tool-calling conversation cannot be resent statelessly. Only
+the server can hold the model's side. `GeminiClient.complete()` now sends only the messages added
+since the last call and passes `previous_interaction_id`.
+
+Our transcript is unchanged. It is still ours, still what the recorder compiles, and still what
+goes into evidence. What moved to the server is the model's own copy of the conversation, not our
+record of it.
+
+The same run found the input shape was wrong too: `text` and `image` are content parts, not
+top-level input items. A single bare text is accepted, which is why a one-shot call worked and a
+conversation did not. History has to wrap parts in a `user_input` envelope. The API's 400 named the
+last item, which pointed at the wrong place.
+
+Weak spot: `ScriptedClient` is still stateless, so tests do not cover the server-side continuation.
+A break there only shows up in a real run.
+
+## 0019. The recorder copies locator bundles as they are
+
+Stage 5.
+
+`compile` copies `ActionRecord.bundle` into the saved step unchanged. It does not re-rank tiers or
+run `describe` again.
+
+A bundle was checked against the live page at the moment of the action. By the time the recorder
+runs, that page is gone. Rebuilding would mean checking against whatever the browser shows now, or
+against nothing, and the result would be a locator that was never verified. The only moment a
+locator is known to be good is when it is built.
+
+Rejected: rebuild at compile time so bundles reflect the final page. That turns a verified locator
+into a guess that looks like a recording.
+
+Weak spot: the recorder cannot spot a bad bundle. If `describe` picked something unique at that
+moment but not stable, like the balance cell in the real run whose `role_name` primary is the
+balance figure itself, the recorder copies the mistake. Nothing checks whether a bundle names
+something that will still be true next month. That is the biggest gap in stage 5.
+
+## 0020. A declared input that matches nothing is a compile error
+
+Stage 5.
+
+If a declared input cannot be matched to any value typed during the run, compilation fails with
+`INPUT_MATCHES_NO_LITERAL` instead of warning.
+
+An input promises the caller it will be used. An input the flow ignores means a caller passing a
+member id gets a result for whatever id was baked in at recording, which looks like success. The
+schema would reject an unused required input anyway. Failing in the compiler just gives a better
+message: it can say no recorded step used a value, or that two inputs could not be told apart.
+
+Rejected: warn and drop the input. Always gives a capability, but it silently changes what the
+model declared, and nobody reading it later would know.
+
+Weak spot: matching is inference. The model never says which parameter a typed value came from, so
+the recorder works it out from examples first and the goal text second. When that is ambiguous it
+refuses, so a real two-parameter flow whose values are not in the goal will not compile until
+someone adds examples.
+
+## 0021. Compiled capabilities have no expected outcomes
+
+Stage 5.
+
+The compiled capability declares no business outcomes, and the compile report says so.
+
+The app has three real ones, and adding them to every capability would look thorough. It would also
+be made up. The run being compiled never saw any of them, so nothing shows their checks are right.
+A declared outcome is checked on every replay, and a check nobody has seen match is a guess, like a
+checkpoint that never passed (0013). Evidence here only comes from real runs.
+
+Rejected: fill them in from the target app's error pages, since I wrote the app. That does not work
+for a vendor app nobody has the source for.
+
+Weak spot: a capability compiled from one happy path treats a "no such member" page as a failed
+check, not an answer. That is exactly the confusion the result types exist to prevent. The fix is
+more recordings, one per outcome, or a person adding them (0027).
+
+## 0022. First compile is always a draft
+
+Stage 5.
+
+Every compiled capability is `draft`, and there is no flag to change that.
+
+A compiled capability has run once, forwards, with the model making every decision. That says
+nothing about replay, which has no model and finds controls from saved bundles. The first thing that
+could justify `approved` is a successful replay.
+
+Rejected: mark it approved when discovery verified its checkpoint and outputs. That is a real
+signal, but it shows the finish claim matched the page the model was on, not that a locator saved
+mid-run works on a fresh load, which is what actually breaks.
+
+Weak spot: nothing moves a capability from draft to approved yet, so the field does nothing until
+replay refuses drafts (0026).
+
+## 0023. Outcomes are checked before a step's own check
+
+Stage 6.
+
+Each step runs in a fixed order: policy check, find and act, recoveries, expected outcomes, then
+the step's postcondition. Outcomes coming before the postcondition is the part that matters.
+
+A "no member record matches" page fails the search step's postcondition and the checkpoint. If the
+postcondition came first, every not-found lookup would be exit 40, a person paged and a DOM dump
+written, to deliver an answer the run already had.
+
+Recoveries come first too. A maintenance page covering the screen makes every other question
+meaningless: no check passes and no outcome matches. Clearing it first means the judgement is about
+the flow, not the interruption.
+
+Rejected: check outcomes only after the last step, where the answer usually is. A not-found page
+shows at step 3 of 4, step 4 then fails to find its control, and the real answer is never reported.
+The flow can end early, so outcomes are checked after every step.
+
+Weak spot: `check_after_step` means exactly that step, not that step or later. `None` means every
+step. (An earlier version of this entry said "or later", which the engine never did.) An outcome
+that can appear at more than one point has to use `None`, or it is missed. 0045 is what that looks
+like.
+
+## 0024. Irreversible steps are never retried
+
+Stage 6.
+
+`_retry_budget` returns 0 for any `risky_irreversible` step, whatever its wait settings say. A
+timeout on one escalates to a person.
+
+From outside, a timeout and an action that went through without showing it look the same. The
+thing that would tell them apart is behind the thing that timed out. Retrying risks opening the
+account twice. Escalating costs a person two minutes.
+
+Rejected: look at the page after the timeout and retry only if the action clearly did not happen.
+Usually works, but fails exactly when it matters: a slow confirmation page looks the same as one
+that will never load.
+
+Rejected: a per-step retry setting. The person who turns it on is not the person who deals with a
+duplicate transfer, and that setting gets changed during an incident.
+
+Weak spot: a step wrongly marked safe at recording can still be retried into a duplicate. Risk comes
+from the policy's `risky_control_names` and the recorder, and neither is perfect. At least the same
+marking drives the approval gate, so a mistake is visible in the file.
+
+## 0025. A fingerprint mismatch stops the run
+
+Stage 6.
+
+If the saved fingerprint does not match what the run sees before it starts, it stops before step 0
+instead of trying and reporting drift after.
+
+A mismatch means this is not the app the capability was recorded on. Either it is another tenant,
+and the right move is to use that tenant's overrides, or the app changed and the saved locators
+describe a screen that is gone. Carrying on means running steps whose meaning is unknown on a real
+member's account. Stopping wrongly costs a person confirming a cosmetic change. Carrying on wrongly
+means acting on the wrong screen.
+
+Rejected: warn and continue if enough of the fingerprint matched. Nobody can defend a threshold.
+Two of three landmarks matching is more likely a sign the page changed in the one spot not checked.
+
+Weak spot: the fingerprint is the title, brand text, landmarks and the shape of the page frame. The
+frame is what a reskin changes first and it rarely changes what the flow means, so harmless rebrands
+will stop runs. The answer is an override for the reskinned app. There is no automatic
+re-fingerprinting, because a drift check that updates itself stops being a drift check.
+
+## 0026. Drafts do not replay without a flag
+
+Stage 6.
+
+`check_approval` refuses to run a `draft` unless `--allow-draft` is passed, before the browser opens.
+
+A compiled capability has run once, with a model choosing everything from a live snapshot. Replay
+is a different path. The most common way it fails is a locator that was unique where the model was
+standing but not on a fresh load, and only a replay finds that. The flag marks the line between
+"worked once in another mode" and "worked in this mode".
+
+Rejected: allow draft replays and mark the result as advisory. Callers read the exit code, and an
+advisory success is still exit 0.
+
+Weak spot: nothing promotes a draft to approved, and every replay in `evidence/` used
+`--allow-draft`. So for now the gate slows a person down rather than controlling automation. Fixing
+that needs a promotion path: several successful replays recorded on the capability and a person
+signing off. That is the approval stretch goal, and it is not in this submission.
+
+## 0027. member_not_found and member_restricted were added by hand
+
+Stage 6.
+
+The discovery run only saw member 100001, who exists, so compiled 1.0.0 had no outcomes (0021). I
+wrote both outcomes by hand against the live pages: `member_not_found` in 1.1.0, and
+`member_restricted` plus the maintenance recovery in 1.2.0. `Provenance.human_edited` is true on
+both, so a reviewer can tell what the model saw from what a person added without comparing against
+a transcript.
+
+The risk with a hand-written check: if the text is wrong, the outcome never fires and the run reports
+a failed check. The file looks right and does nothing.
+
+For the lookup capability that is covered. `test_unknown_member_is_a_business_outcome_not_a_failure`
+and `test_restricted_member_is_a_business_outcome_not_a_crash` replay against the live app and check
+the codes, and `test_interstitial_is_dismissed_and_the_run_still_succeeds` turns on the real fault
+and checks the recovery is listed. Sample runs 07 and 08 also show `member_restricted` and
+`validation_rejected` firing.
+
+I did not apply the same lesson to `open-member-subaccount-1.0.0.json`, which I wrote by hand later
+with three outcomes and no tests. None of them could fire. See 0045.
+
+## 0028. Navigate steps store a path, not a URL
+
+Stage 6.
+
+A navigate step saves `/member/{member_id}`. The host comes from `surface.base_url` at replay time.
+
+The recorder first saved the full URL, so the first capability had `http://localhost:8080/` in it,
+tying it to one machine. The brief wants one capability to work on the same app deployed in
+different places, which is normal here: the same vendor app at a different host for each credit
+union.
+
+Found by a test that pointed `base_url` at a random port and saw the run go to 8080 anyway.
+Recompiling the saved transcript after the fix gave the committed 1.0.0 byte for byte apart from
+that field.
+
+Weak spot: only the base URL prefix is stripped, so a run that wandered to another host would save
+a full URL for that step. `allowed_hosts` makes that hard, and nothing rejects a capability whose
 navigate step names a host.
 
-## 0029. the control lease is a polled file
+## 0029. The control lease is a file both sides poll
 
-Phase 7.
+Stage 7.
 
-Who is allowed to touch the browser is one small JSON file, written atomically and polled by
-both sides. No queue, no socket, no database, no lock.
+Who may touch the browser is one small JSON file, written atomically and read by both sides. No
+queue, socket, database or lock.
 
-There are exactly two processes and exactly one mutable fact between them. A file holds that
-fact, `os.replace` makes each write atomic, and both sides read it whenever they need to know.
-That is the entire concurrency design, and it fits in one module you can read in a minute.
+There are two processes and one fact they share. A file holds it, `os.replace` makes each write
+atomic, and both read it when they need to. Either side can restart and the state survives, because
+it is not in either process. You can `cat` it, and tests can check it without a broker. When no
+operator page is running, the run still holds a lease through `InProcessLease`, the same protocol
+with one participant, so the "no browser action without the lease" rule still applies.
 
-It is also more robust than the alternatives for this particular shape. Either side can be
-restarted and the state survives, because the state is not in either process. A reviewer can
-`cat` it. A test can assert on it without standing up a broker. And when the console is not
-running at all, the run still holds a lease and invariant 10 still means something, which is
-why `InProcessLease` exists: not a stub, but the same protocol with one participant.
+Rejected: an HTTP call or socket from the run to the operator page. Then the run cannot start
+unless the page is up, and restarting the page loses the session. Rejected: a queue or database.
+The brief does not reward them and they add nothing. Polling every half second is plenty when a
+person takes minutes.
 
-Rejected: a socket or an HTTP call from the run to the console. It inverts the dependency,
-so the run cannot start unless the console is already up, and it turns an operator restart
-into a lost session. Rejected: a queue or a database. Section 8 names both as explicitly not
-rewarded, and neither buys anything here. The polling interval is half a second against a
-human who takes minutes.
+No lock, because each state has exactly one side allowed to write it: automation owns running and
+resuming, the operator owns paused and human_control. Two writers never compete for the same change.
 
-No locking, deliberately. The transition table gives each state exactly one legal writer:
-automation owns running and resuming, the operator owns paused and human_control. Two writers
-never contend for the same transition, so a lock would guard a case the protocol has already
-made illegal.
+Weak spot: `deadline_at` is compared with the clock of whichever machine reads it, so skewed clocks
+would disagree. Both sides are local here.
 
-Known weakness: `deadline_at` is compared against wall clock time on whichever machine reads
-it, so two machines with skewed clocks would disagree about expiry. Both sides are local here.
+## 0030. The visible browser window is the live session
 
-## 0030. the headed browser window is the live session
+Stage 7.
 
-Phase 7.
+The operator page shows the request, screenshot, accessibility snapshot and parameter names, and
+moves the lease. It does not show the live page. The person works in the Chromium window the run
+opened, with their own mouse and keyboard.
 
-The operator console shows the intervention, the screenshot, the accessibility snapshot and
-the parameter names, and it moves the lease. It does not show the live page. The human works
-in the Chromium window that automation already opened, with their own mouse and keyboard.
+This is a real cut: no co-browsing, WebRTC, VNC or screencast. Streaming is a lot of infrastructure
+and shows nothing about what is being assessed, which is whether control changes hands safely: the
+run stops, the person gets enough context, it is the same session and not a new one, and what the
+person did is recorded. All four work without streaming.
 
-This is the cut, and it is a real one: there is no co-browsing, no WebRTC, no VNC, no
-screencast. Section 8 rules those out by name, and the reason survives the rule. Streaming the
-session is a large amount of infrastructure that demonstrates nothing about the thing being
-assessed. What is being assessed is whether control can actually change hands safely: whether
-automation stops, whether a human gets enough context to act, whether the same session is
-handed over rather than a new one, and whether what the human did comes back as evidence. All
-four of those are real here and none of them needs a pixel stream.
+What is lost: the person has to be at the machine running the browser. Streaming could be added
+later without changing the lease, which is the only thing the two sides share.
 
-What is genuinely lost: the operator has to be at the machine running the browser. A remote
-operator cannot use this. That is a deployment limitation, not a design one, and the seam it
-would attach to is the lease, which is already the only thing the two sides share.
+One consequence: `POST /take` cannot install the recorder that captures what the person does,
+because the Flask process has no browser handle. `Session.escalate` installs it before the handover.
+The route only moves the lease.
 
-Consequence for the console: `POST /take` cannot install the page recorder, because the Flask
-process holds no browser handle. Installation happens in `Session.escalate`, before the
-handover, which is the only side of the boundary that has a page. The route only moves the
-lease.
+## 0031. Resuming always checks the page, whatever the person said
 
-## 0031. resume always re-verifies, and never trusts the report
+Stage 7.
 
-Phase 7.
+When control comes back, the run looks at the page and checks the current step's postcondition (or
+the checkpoint if the step has none) before reading the person's answer. `completed_manually` is
+refused if the page does not show the step done.
 
-When control comes back, automation re-observes the page and evaluates the current step's
-postcondition, or the capability checkpoint if the step has none, before it looks at what the
-operator said. `completed_manually` is refused outright if the page does not show the step as
-done.
+The person's answer is a claim about a screen, and the screen is right there. One observation rules
+out a whole class of mistakes: they clicked Cancel instead of Confirm, fixed the wrong member, or got
+interrupted and thought they had finished. In a banking flow, the step after a wrongly skipped one
+acts on the wrong screen.
 
-An operator's answer is a claim about a screen. The screen is right there. Checking costs one
-observation and removes an entire class of failure where the run proceeds from a state nobody
-established: the human meant to click Confirm and clicked Cancel, or fixed a different member's
-record, or was interrupted halfway and came back thinking they had finished. In a back office
-banking flow the step after a wrongly skipped one operates on the wrong screen.
+The person may also have left the browser anywhere, on another member or with a dialog open. Even
+for `approved`, the page may not be where the run paused. So the check always happens.
 
-There is a second reason, which is that a human who has had the session may have moved it
-anywhere. They may have navigated away, opened another member, or left a modal open. Even for
-`approved`, where nobody claims to have done anything, the page automation resumes onto is not
-necessarily the page it paused on. So the re-observation is unconditional rather than tied to
-one outcome.
+Rejected: trust `completed_manually` because it came from a person. That makes correctness depend on
+someone's memory of what they did in a clunky UI minutes ago. Their note is kept, and it appears in
+the failure message when the page disagrees, so both sides of the story are there.
 
-Rejected: trust `completed_manually` and carry on, treating the operator as authoritative
-because they are the human. It makes the system's correctness depend on a person's memory of
-what they did several minutes ago in a UI they were fighting. The operator's note is kept, and
-it is kept as a note: it appears in the failure message when the page disagrees, so the person
-reading the failure can see both accounts of what happened.
-
-Known weakness: verification is only as good as the declared postcondition. A step with no
-postcondition falls back to the capability checkpoint, and a step with neither cannot be
-verified at all, so `completed_manually` on such a step is refused rather than assumed. That is
-strict, and it is the right direction to be strict in.
+Weak spot: this is only as good as the declared check. A step with no postcondition and no
+checkpoint cannot be verified, so `completed_manually` is refused there. Strict, but in the safe
+direction.
 
 ## 0032. retry_step is refused on an irreversible step
 
-Phase 7.
+Stage 7.
 
-The console does not offer `retry_step` when the step is `risky_irreversible`, and
-`refuse_unsafe_outcome` rejects it even when the console is bypassed entirely.
+The operator page does not offer `retry_step` on a `risky_irreversible` step, and
+`refuse_unsafe_outcome` rejects it even if the page is bypassed.
 
-This is 0024 with a human added, and the human makes it worse rather than better. Automation
-timing out on an irreversible step cannot tell a slow response from a completed action. A
-person who has been inside that session for five minutes has had every opportunity to click
-the thing themselves, and may well have, possibly without remembering clearly. Re-performing
-opens the account twice. The operator has three outcomes that are all safe: approve it and let
-automation do it, say they did it and have that verified against the page, or abort.
+This is 0024 with a person involved, which makes it worse. A person who had the session for five
+minutes may well have clicked the button themselves. Doing it again opens the account twice. They
+have three safe choices: approve and let the run do it, say they did it and have that checked, or
+abort.
 
-Enforced in two places on purpose. Hiding the option in the UI is a courtesy to the operator.
-The refusal in `refuse_unsafe_outcome` is the control, because a resolution file can be written
-by hand, by a script, or by some future second console, and the rule has to live where the
-resolution is read rather than where it is offered. There is a test for each.
+It is enforced in two places. Hiding the button helps the operator. The refusal in
+`refuse_unsafe_outcome` is the real control, because a resolution file can be written by hand, by a
+script, or by some other page, so the rule has to be where the resolution is read. Each has a test.
 
-Rejected: allow retry with a confirmation dialog. A dialog is a UI element, and the whole point
-of invariant 3 is that constraints which matter live in Python rather than in a prompt or a
-screen. Rejected: allow retry if the postcondition does not hold, on the grounds that the
-action evidently did not happen. Tempting and wrong for the same reason as 0024: a
-confirmation screen that is slow to render is indistinguishable from one that never will be,
-and this is the case where the page cannot be trusted to be finished.
+Rejected: allow retry after a confirmation dialog. A dialog is UI, and the rules that matter live in
+code. Rejected: allow retry if the postcondition does not hold. Same problem as 0024: a slow
+confirmation page looks the same as one that never loads.
 
-## 0033. what the human typed is never recorded
+## 0033. What the person types is never recorded
 
-Phase 7.
+Stage 7.
 
-The recorder injected before a handoff captures clicks, navigations, and which field changed.
-It never captures the value that went into a field. The `change` handler reads the element's
-identity and does not touch its value.
+The recorder added before a handoff captures clicks, navigations and which field changed. It never
+captures what was typed. The `change` handler reads which element changed and never its value.
 
-Invariant 6 does not stop applying because a person did the typing rather than a model. The
-fields in this application take account numbers, member names and dollar amounts, and an
-intervention file is a durable artifact on disk that outlives the run. A capture that included
-values would be a second path to disk for exactly the data the redaction layer exists to keep
-off it, and a quieter one, because nobody would think to point `--redact` at what a human typed.
-
-Field identity is the part with audit value anyway. "The operator changed the nickname field
-and then clicked Confirm" is what a reviewer needs. What the nickname was is on the screen, in
-the after snapshot, which is a separate and deliberate capture.
-
-Those two aria snapshots are the exception that proves the rule, and they are why the Session
-now takes a Redactor. They show a real back office screen and therefore may show declared
-sensitive values, so they go through the same redaction as evidence does. Without that,
-`interventions/` would have been a second and quieter route past invariant 6 than `evidence/`.
-
-Known weakness: redaction only replaces values the caller declared. A sensitive value nobody
-declared reaches the snapshot, exactly as it would reach evidence. The structural protection is
-in `params_redacted`, which is built from the capability's declared inputs rather than from the
-params dict, so the code path that could leak a parameter value does not exist.
-
-## 0034. the fingerprint check loads the entry screen before comparing
-
-Phase 7, fixing phase 6.
-
-`check_fingerprint` now navigates to the surface's entry path before it compares anything.
-
-It used to observe immediately, which meant it observed `about:blank` on a fresh context. An
-empty title matches no recorded title, so every capability with a fingerprint failed pre-flight,
-and the only capabilities that passed were the ones whose fingerprint recorded nothing at all.
-The one artifact in the repo at the time was in that second category, so the check passed
-everywhere and had never once compared anything. A drift detector that cannot fire is worse
-than no drift detector, because the passing pre-flight reads as evidence that the surface was
-checked.
-
-Found by hand authoring a capability that actually recorded a fingerprint, and watching it fail
-pre-flight against the very application it was written against.
-
-Known weakness: the title comparison is exact equality, and a page title is one of the more
-volatile parts of a legacy app. The intended answer to a changed title is a variant override,
-per 0025, rather than loosening the comparison to containment. Loosening it would make the
-check pass on a page that merely shares a brand prefix, which is most of them.
-
-## 0035. the operator is simulated on the thread that owns the browser
-
-Phase 7.
-
-The end to end handoff test drives the operator from inside `await_return`, through a Session
-subclass, rather than from a second thread.
-
-Playwright's sync API binds a page to the thread that created it. A second thread touching that
-page raises before it does anything, so a human simulated in a worker thread cannot click
-anything at all. The options were a second Playwright client attached over CDP, which means
-launching Chromium with a debugging port purely for a test, or acting from inside the wait.
-
-What the subclass gives up is timing realism: the operator acts at a defined moment rather than
-whenever they get to it. What it keeps is everything the handoff is about. The lease moves
-through the console's own HTTP routes, so the routes are under test rather than simulated. The
-human's clicks go through the raw page and touch no LocatorBundle, no policy gate and no step
-index, so they are genuinely not automation. And the test asserts the browser context and page
-objects are identical before and after, which is invariant 7 checked rather than claimed.
+The rule that pii never reaches disk applies whether a model or a person typed it. This app's fields
+take account numbers, names and amounts, and an intervention file stays on disk after the run.
+Capturing values would be a second, quieter way for that data to reach disk, since nobody would think
+to `--redact` what a person typed. Which field changed is what an auditor needs anyway. The value
+itself is visible in the after snapshot.
 
-Rejected: skip the end to end test and assert only on files. That would test the bookkeeping
-and leave the actual claim, that control changes hands on one live session, unverified.
+Those before and after snapshots are why `Session` takes a redactor. They show a real screen and may
+contain declared sensitive values, so they go through the same redaction as evidence. Without that,
+`interventions/` would have been a quieter leak than `evidence/`.
 
-## 0036. failure/ is written for a business outcome too
-
-Phase 8.
-
-Any result that is not `success` gets a `failure/` directory, and that includes
-`business_outcome`. The name is wrong for that case and the contents are not.
-
-A not-found lookup is a correct answer that took a fifth of a second, and invariant 5 exists to
-stop the system calling it a fault. Writing it into a folder called `failure/` cuts against
-that, in the one place a reviewer looks. But the alternative loses something real: the screen
-that produced the outcome, the DOM behind it, and the detect signal that matched are exactly
-what a person needs when an outcome fires that should not have, and that is a live risk here
-because two of the three declared outcomes were hand added rather than observed (0027).
-
-So the artifacts are written and `context.json` carries the actual `result_kind`. Anything
-reading the contents sees `business_outcome`; only the directory name is misleading, and only
-until you open it. A test asserts that field specifically, so the labelling cannot silently
-regress.
-
-Rejected: rename the directory to `diagnostics/`. Honest, and it would have been my choice, but
-the phase spec named `failure/` and a directory name is not worth diverging on without asking.
-Rejected: skip it for business outcomes. It optimizes the folder name at the cost of the
-evidence, which is the wrong trade when the outcome declarations are the least verified part of
-an artifact.
-
-## 0037. screenshots are masked with live geometry, not the recorded hint
-
-Phase 8.
-
-Fields bound to a parameter the capability declares `pii` or `secret` are blacked out at
-capture time with Playwright's own `mask=` on `page.screenshot`, which resolves the locator
-against the page as it stands. The phase spec called for `geometry_hint`.
-
-`geometry_hint` is the bounding box recorded during discovery, and `Rect`'s own docstring in
-the schema says it is "a hint for a human looking at evidence, never a locator". Masking with
-it makes it load bearing. A page that reflows, a longer member name, a validation error
-appearing above the field, and the black box lands next to the value instead of over it. The
-screenshot then looks redacted while not being redacted, which is worse than an obvious hole
-because it invites trust. Live masking puts the box where the field actually is at the moment
-of capture.
-
-The cost is a locator build per masked field per screenshot. Built directly rather than
-resolved, so nothing waits and nothing raises: Playwright ignores a mask locator matching zero
-elements, which is the common case for a field belonging to a different step.
-
-**The limit, stated plainly.** Box masking is best effort. It covers the field the artifact
-knows about. It cannot cover the same value rendered somewhere the artifact does not know
-about: a confirmation banner, a page title, a summary table, a tooltip, an error message
-quoting what was entered. Any of those puts the value in the PNG in plain sight, and no amount
-of masking declared fields will catch it, because the artifact has no record that the value
-appears there at all.
-
-The safer production default is therefore not better masking. It is aria snapshots with field
-level redaction as the primary visual record, which is text and so passes the Redactor like
-everything else, and screenshots only on explicit operator request. That is what this system
-would ship with outside an assessment, and it is the honest recommendation rather than a claim
-that the masking here is sufficient. Repeated in REPORT.md section 6.
-
-Known weakness beyond that: masking is applied by the surface, so a screenshot taken by
-anything that is not the surface bypasses it entirely. Nothing currently does.
-
-## 0038. every run directory records the commit and the policy hash
-
-Phase 8.
-
-`meta.json` carries `git_commit` and `policy_sha256` alongside the path the policy was loaded
-from.
-
-Evidence is read later, by someone who was not there. Two facts govern how to interpret every
-other file in the directory and neither can be recovered afterwards: which code ran, and which
-allowlist it ran under. A replay that was blocked six weeks ago tells you nothing useful unless
-you know whether the rule that blocked it still exists.
-
-Both parts of the policy record are needed. The path alone is worthless, because
-`config/policy.json` is edited in place and the file at that path today is not the file that
-ran. The hash alone is unreadable, because a bare digest does not say what it is a digest of.
-Together they say "this allowlist, exactly this version of it", and a reviewer can check by
-hashing the file themselves. A test does exactly that.
-
-`git_commit` is suffixed `-dirty` when the working tree was not clean, which is the honest
-answer for most development runs and a signal not to trust the commit as a full description.
-
-Rejected: embed the whole policy document in meta.json. It is small enough that this would
-work, and it removes the indirection, but it also copies the allowlist into every run directory
-where it will drift out of sync with nothing to detect that. A hash cannot drift.
-
-Known weakness: `git_commit` degrades to `"unknown"` rather than raising if git is unavailable.
-A run that dies because it could not shell out to git is worse than a run whose provenance is
-one field short.
-
-## 0039. one writer, and the directory shape stopped depending on the caller
-
-Phase 8.
-
-Discovery, replay and escalation all write through `EvidenceWriter`. Nothing else creates a
-file inside a run directory.
+Weak spot: redaction only replaces declared values. An undeclared sensitive value reaches the
+snapshot, just as it would reach evidence. `params_redacted` is built from the capability's declared
+inputs, not from the values passed in, so that path cannot leak a parameter value.
 
-Consolidating this found a real gap rather than merely tidying. Discovery accumulates its
-events on the transcript instead of emitting them as it happens, and `run.jsonl` for a
-discovery run existed only because `cmd_discover` remembered to loop over those events and
-replay them into the writer. Any other caller of `run_discovery` produced a directory with no
-event log at all, and the test that compares a discovery directory against a replay directory
-is what surfaced it. Flushing the events is now `write_transcript`'s job, so the shape is a
-property of the writer rather than of whoever called it.
+## 0034. The fingerprint check loads the first page before comparing
 
-The same reasoning put `write_failure_artifacts` in `src/evidence/failure.py` rather than in
-the replay engine, where it started. Discovery needs the identical post mortem, and two
-subsystems each building their own would drift within a phase.
+Stage 7, fixing a stage 6 bug.
 
-Rejected: a base class or a mixin that each subsystem inherits. Section 8 rules out plugin
-systems and this is the same instinct one size down. A module level function taking a duck
-typed surface and sink is smaller, and it lets discovery pass no `Step` at all rather than
-inventing one to satisfy an interface.
+`check_fingerprint` now goes to the entry page before comparing anything.
 
-Known weakness: `interventions/` is still written by `InterventionStore`, not by the evidence
-writer. That is deliberate, because interventions outlive a run and are read by a separate
-process, but it does mean there are two places that write to disk. Both go through the same
-Redactor, and the credential guard walks both.
+It used to look straight away, which on a new browser meant `about:blank`. An empty title matches no
+saved title, so every capability with a fingerprint failed the check, and only capabilities with an
+empty fingerprint passed. The only capability in the repo at the time had an empty one, so the check
+passed everywhere and had never compared anything. A drift check that cannot fire is worse than none,
+because passing it looks like proof.
 
-## 0040. the real discovery run is preserved unredacted, and not regenerated
+Found by writing a capability by hand with a real fingerprint and watching it fail against the app it
+was written for.
 
-Phase 9.
+Weak spot: titles are compared exactly, and titles change often in old apps. The answer is an
+override (0025), not loosening to "contains", which would pass on any page sharing a brand prefix.
 
-`evidence/curated/01-discovery-real` predates the phase 8 writer. It has no `meta.json`, and it
-holds the member id `100001` in plain text in eight places. It has been kept exactly as it was
-recorded rather than regenerated.
+## 0035. The test operator acts on the thread that owns the browser
 
-Regenerating it means spending a real model call to replace a genuine artifact with a second
-genuine artifact differing only in having one more file. That run is the least reproducible
-thing in the repository: a non deterministic model driving a real browser, once. Trading it for
-tidiness is a bad trade, and doing it without asking would be worse, so it was not done.
+Stage 7.
 
-The unredacted value is the more interesting half. Every other curated run was produced with
-`--redact` and holds zero raw occurrences. The difference is not carelessness, it is structural:
-at discovery time there is no capability, therefore no `ParamSpec` marking `member_id` as `pii`,
-and the goal sentence handed to the model names the member outright. Redaction protects values
-somebody declared, and during discovery nobody has declared anything yet.
+The end-to-end handoff test plays the operator from inside `await_return`, through a `Session`
+subclass, not from a second thread.
 
-That is a real gap in the design and worth stating rather than hiding, because the same gap
-exists in production. The answer is not to redact harder after the fact. It is that a discovery
-run against real data needs its sensitive inputs declared up front, before the goal is written,
-so `--redact` can be populated from something other than hindsight. Nothing in this repository
-does that today, and the honest position is that discovery evidence is the least protected
-evidence the system produces.
+Playwright's sync API ties a page to the thread that created it. A second thread touching it raises
+at once, so a simulated person in another thread cannot click anything. The alternatives were a second
+Playwright client over CDP, which means launching Chromium with a debugging port just for a test, or
+acting from inside the wait.
 
-Nothing sensitive is actually exposed here: 100001 is a seeded record in a local stand in
-credit union that ships in this repository.
+This loses realistic timing, since the operator acts at a fixed moment. It keeps what matters. The
+lease moves through the operator page's real HTTP routes. The clicks go straight to the page with no
+`LocatorBundle`, policy check or step index, so they are not automation. And the test checks the
+browser context and page objects are the same before and after.
 
-## 0041. captured human actions carry a url, and it was not redacted
-
-Phase 9, fixing phase 7.
+Rejected: skip the end-to-end test and only check files. That tests the bookkeeping and leaves the
+main claim, that control changes hands on one live session, untested.
 
-The phase 9 credential sweep found the raw member id in
-`06-escalation-handoff/intervention.json`, in `resolution.human_actions[].url`.
-
-`Session._collect_resolution` redacted `url_after` and `aria_after` and passed the captured
-actions through untouched. Each captured action carries the url it happened on, and
-`/member/100001/subaccount` is a member id in a path. The action's visible `text` is the same
-exposure one step removed: a link labelled with an account number is an account number.
+## 0036. failure/ is written for business outcomes too
 
-Fixed by redacting the serialized action and reparsing it, rather than by redacting the two
-fields that happen to be strings today. That is the same seam the evidence writer uses and for
-the same reason: naming fields means remembering to add each new one, and this leak is exactly
-what forgetting looks like.
-
-Worth recording how it was found. Phase 7 had a test asserting no typed value reached the
-captured actions, and it passed, because it only checked the values a human typed. The url was
-not typed by anyone, it was ambient. A sweep that walks every byte of a finished run found in
-one pass what a targeted assertion missed, which is the argument for having both.
-
-## 0042. invariant tests read the curated evidence, and never skip
-
-Final polish.
-
-`tests/test_evidence_invariants.py` reads `evidence/curated/*/transcript.json`. It used to glob
-`evidence/*/transcript.json` and skip when that matched nothing, which in a clean clone is always,
-because the curated transcripts sit one level deeper. Invariant 9 checked against a real model was
-therefore unchecked for everyone except the machine that made the runs.
-
-A skip is not neutral here. A green suite with two skipped invariant tests reads as "the invariant
-holds" when it means "nobody looked". So the tests read tracked data, a guard test fails if that
-data is missing rather than letting an empty parameter set skip silently, and a run that used no
-refs passes vacuously instead of skipping, since nothing about it went unchecked.
+Stage 8.
 
-Rejected: keep reading `evidence/` so developer runs are checked too. That makes the result of
-the suite depend on whatever someone ran last, and it is what produced the phase 11a failure where
-following the README's own dry run turned the suite red.
+Any result that is not `success` gets a `failure/` folder, including `business_outcome`. The name is
+wrong for that case, but the contents are useful.
 
-Known weakness: only one curated run has a transcript, so invariant 9 is checked against exactly
-one real model run.
-
-## 0043. allow_draft is recorded, by the caller and by the engine
+A not-found lookup is a correct answer, and calling it a failure is the thing I have been trying to
+avoid. But skipping the folder loses the screen, the DOM and the matched check, which is what you need
+when an outcome fires that should not have. That is a real risk, since two of the three declared
+outcomes were written by hand (0027).
 
-Final polish.
-
-A replay of a draft capability is legitimate only with `--allow-draft`, and the curated evidence
-contained replays of drafts with nothing saying which kind of run they were. The gate was checked,
-not assumed: the same command without the flag exits 40 at pre-flight with no step run.
-
-`meta.json` records `allow_draft` from the caller, and the engine's `preflight` event records the
-value it actually honoured. Two records because meta is written by whoever constructs the writer,
-while the event comes from the code that made the decision, and evidence that rests only on the
-caller's account of itself is the weaker kind.
-
-Known weakness: runs 03 to 06 predate the field and were not regenerated, so only 02 carries it.
-evidence/README.md says so.
-
-## 0044. the capability catalog reads, and invocation stays in replay
-
-Final polish. The brief's first stretch goal.
-
-`src/catalog.py` and two commands, `catalog list` and `catalog describe <id>`. The typed contract
-it prints is the artifact schema read back: inputs with type and sensitivity, outputs, declared
-business outcomes, which steps need human approval, the exit codes, and the exact command that
-invokes it. Every artifact is validated on load, and an invalid one is an error naming the file,
-because an agent told a capability does not exist when it is merely broken routes around a fault
-nobody knows about. Versions order semantically, so 1.10.0 is not handed out as older than 1.2.0.
-
-Rejected: a `catalog invoke` command. It would be a second way to run a capability, with its own
-argument handling to keep in step with `replay`. `describe` prints the `replay` line instead, so
-there is one execution path and the catalog never writes anything.
-
-Rejected: an HTTP endpoint. Section 8 rules out servers built ahead of need, and the contract a
-service would expose is the one already printed here.
-
-Known weakness: the invoke line assumes the repository layout, `.venv/bin/python` from the root,
-because that is how every README command runs. An agent in a different environment has to adapt
-it, and nothing checks the placeholders it fills in against the declared types before the run.
-
-## 0045. three defects stopped the sub-account capability's outcomes from ever firing
-
-Final gap closure. Found while producing curated run 08, recorded first, then fixed.
-
-The sub-account capability declares `member_not_found`, `member_restricted` and
-`validation_rejected`. All three were written by hand and none was ever replayed. Producing run 08
-showed that none of them could fire.
-
-**The validation detect signal names text the application never shows.** It looks for "Correct
-the highlighted fields". The application's messages are field specific, such as "Initial deposit
-must be greater than zero.", and that phrase exists nowhere in the target app. This is exactly the
-weakness 0027 describes, repeated in a capability written after that entry.
-
-**A step's wait runs out before outcomes are checked.** Step 4 waits for "Review Sub-Account
-Request". A rejected form never shows it, so `act()` raises a timeout after ten seconds and the
-engine returns a `timeout` failure straight away. Recoveries and declared outcomes are only
-consulted once a step's action and wait have succeeded, so a correct detect signal would still not
-be read. The lookup capability escapes this only because its search step waits for the page load
-rather than for specific text. The ordering in 0023 puts outcomes before postconditions, but says
-nothing about wait timeouts, and that is the gap.
-
-**Pre-flight treats a business outcome screen as drift.** For a restricted or unknown member, the
-fingerprint check in 0034 loads the entry screen, gets an "Access Restricted" or not-found title
-instead of the recorded one, and stops with `surface_unavailable` before step 0. The two member
-outcomes in this capability check after step 0, so they can never be reached.
-
-**Fixed, in this order, each with a test that fails on the old code:**
-
-1. When a step's wait runs out, the engine checks that step's declared outcomes before retrying or
-   reporting a timeout. The run log records it as `wait_timed_out_on_outcome`. This keeps 0023's
-   promise that an answer is never reported as a crash for steps that wait on text.
-2. The fingerprint check no longer calls a mismatch drift when the entry page matches an outcome
-   the run can report at step 0. A title change with no matching outcome still stops the run, and
-   a test checks that.
-3. The capability is published as 1.1.0, detecting the app's real field errors with a pattern.
-   1.0.0 is unchanged, because sample run 06 was replayed against it. A test checks the pattern
-   against every message in the app's own error table.
-
-Run 08 was then regenerated against 1.1.0 and returns `validation_rejected` with exit 10. The
-first attempt, a `timeout` with exit 40, is what exposed all of this.
-
-Rejected: fix the detect signal alone. It would still have timed out, and the more important
-defect was in the engine rather than in one artifact.
-
-Known weakness: an outcome is only recognised at the step it declares. A rejected form that
-appeared at a step whose outcomes do not list it would still come back as a timeout, which is the
-right answer for an undeclared screen but will look similar in a log.
-
-## 0046. an expired session is recovered by starting the flow again
-
-Final gap closure.
-
-`RecoveryAction.reauthenticate` existed in the schema from stage 2 and did nothing at replay, so a
-session timeout, one of the six runtime conditions the brief names, had no handling at all. Lookup
-capability 1.3.0 now declares `reauthenticate_after_session_expiry`: when the page says "Your
-session has expired", the engine goes back to the entry page and starts the flow again from step 0.
-Curated run 09 shows it, and the recovery is named in `recoveries_applied` like any other.
-
-Starting over rather than resuming, because an expired session takes with it whatever the flow had
-built up: a half filled form, a selected record, a position in a wizard. There is nothing to resume
-into. This app has nothing to sign in to, so reauthenticating here is only the restart; a real
-application would sign in first, and that is the part that belongs in the surface.
-
-Two limits, both enforced in the engine rather than left to the rule author. A restart is refused
-once any irreversible step has run, because starting over could do it twice, which is 0024's
-reasoning applied to a restart instead of a retry. And a rule restarts the run at most
-`max_attempts` times, so a detect signal that never goes away cannot loop forever. Either case
-escalates as `recovery_exhausted`. Both have a test against the live app.
-
-Recoveries are now also checked when a step's wait runs out, not only after a step completes. A
-capability whose steps wait for specific text would otherwise sit behind an expired session page
-until the wait failed, and report a timeout instead of recovering.
-
-Rejected: resume at the step that was interrupted. It assumes the application kept state the
-expiry discarded, and on a real back office screen it would type into a form that is no longer
-there.
-
-Known weakness: the fault in the target app fires on the first page load, so run 09 restarts before
-any real progress. A session that expires mid-flow takes the same code path and is covered only by
-reasoning and by the budget and irreversible tests, not by a curated run. The sub-account
-capability does not declare the rule.
-
-## 0047. a model that cannot be reached is a failure, not a crash
-
-Final gap closure.
-
-Discover with no API key used to end with the SDK's `ValueError` as a Python traceback and exit 1,
-which is outside the five result kinds and leaves no `result.json`. The same was true of any
-non-retryable API error, and of a provider that kept returning 429 or 5xx past the retry budget.
-
-`GeminiClient` now raises one typed `ModelUnavailable` for all three, and the discovery loop turns it
-into a `FailureResult` with exit 40, so the run leaves the same evidence as any other failure. The
-message is the SDK's local "No API key was provided" text, which is produced before any request and
-holds no value, or an HTTP status. The provider's response body is never copied into it, because we
-cannot vouch that it is free of anything sensitive.
-
-Rejected: check whether the key is set before building the client, which would also avoid the SDK's
-cleanup warning described in the README. Testing whether the variable is empty means reading its
-value, and invariant 6 says no code here does.
-
-Known weakness: the class is `internal`, the nearest existing failure class. A dedicated class for
-"the model is unavailable" would say it more precisely, but it is a schema change, and invariant 1
-says those are proposed rather than made.
+So the files are written and `context.json` holds the real `result_kind`. Only the folder name is
+misleading, and a test checks that field.
+
+Rejected: rename the folder to `diagnostics/`. I would have preferred it, but the plan named
+`failure/`, and a folder name was not worth changing without asking. Rejected: skip it for business
+outcomes. That fixes the name at the cost of the evidence.
+
+## 0037. Screenshots are masked using the live page
+
+Stage 8.
+
+Fields filled from a `pii` or `secret` parameter are blacked out when the screenshot is taken, with
+Playwright's `mask=` option, which finds the field on the page as it is. The plan said to use
+`geometry_hint`.
+
+`geometry_hint` is the box recorded during discovery, and the schema's own `Rect` docstring says it is
+only a hint for a person reading evidence, never a locator. If the page reflows (a longer name, an
+error above the field) the black box lands next to the value. A screenshot that looks redacted but is
+not is worse than an obvious gap. Live masking puts the box where the field is.
+
+It costs one locator per masked field per screenshot, built without waiting. Playwright ignores a mask
+that matches nothing, which is the usual case for a field from another step.
+
+The limit: masking covers the field the capability knows about. It cannot cover the same value shown
+somewhere else, like a confirmation banner, the page title, a summary table or an error message
+quoting the input. So for a real deployment I would not rely on better masking. I would make redacted
+text snapshots the main visual record, since they go through the redactor like everything else, and
+take screenshots only when an operator asks.
+
+Weak spot beyond that: the surface applies the mask, so a screenshot taken any other way skips it.
+Nothing does that today.
+
+## 0038. Every run folder records the commit and the policy hash
+
+Stage 8.
+
+`meta.json` has `git_commit`, `policy_sha256` and the policy path.
+
+Evidence gets read later by someone who was not there. Two things decide how to read the rest and
+cannot be worked out afterwards: which code ran and which allowlist it used. A block from six weeks
+ago means little unless you know whether that rule still exists.
+
+Both path and hash are needed. `config/policy.json` gets edited, so the path alone does not say which
+version ran. A hash alone does not say what file it belongs to. Together they pin it, and a test
+hashes the file to check.
+
+`git_commit` gets `-dirty` when the tree had changes, as a sign not to take the commit as the whole
+story.
+
+Rejected: copy the whole policy into `meta.json`. It is small enough, but the copies would drift with
+nothing to notice. A hash cannot drift.
+
+Weak spot: `git_commit` falls back to `"unknown"` if git is not available, instead of failing the run.
+
+## 0039. One writer for every run folder
+
+Stage 8.
+
+Discovery, replay and handoffs all write through `EvidenceWriter`. Nothing else creates files in a
+run folder.
+
+Merging them found a real bug. Discovery collects events on the transcript instead of writing them as
+they happen, and a discovery run only had `run.jsonl` because `cmd_discover` remembered to copy the
+events into the writer. Any other caller got a folder with no event log. The test comparing a
+discovery folder with a replay folder caught it. `write_transcript` now writes the events, so the
+layout no longer depends on the caller.
+
+For the same reason `write_failure_artifacts` moved from the replay engine to
+`src/evidence/failure.py`. Discovery needs the same thing, and two copies would drift quickly.
+
+Rejected: a base class or mixin. A plain function that takes a surface and a writer is smaller, and
+discovery can pass no `Step` instead of inventing one.
+
+Weak spot: `interventions/` is still written by `InterventionStore`. That is on purpose, since
+interventions outlast a run and are read by another process, but it means two things write to disk.
+Both use the same redactor and the secret scan checks both.
+
+## 0040. The real discovery run is kept unredacted and not re-run
+
+Stage 9.
+
+`evidence/curated/01-discovery-real` is older than the stage 8 writer. It has no `meta.json` and has
+member id `100001` in plain text in eight places. I kept it as recorded.
+
+Re-running it costs a real model call and gives a different run, since the model is not
+deterministic. It is the one thing in the repo that cannot be reproduced, so I did not trade it for
+tidiness, and would not have without asking.
+
+Why it is unredacted matters more. The later runs were made with `--redact` and contain no raw id. At
+discovery there is no capability, so nothing marks `member_id` as `pii`, and the goal sentence names
+the member. Redaction only protects values someone has marked, and during discovery nothing is marked.
+
+That gap would exist in production too. The fix is not redacting harder afterwards. A discovery run on
+real data needs its sensitive inputs declared before the goal is written. Nothing here does that, so
+discovery evidence is the least protected evidence the system produces.
+
+Nothing real is exposed: 100001 is a made-up member in the local test app that ships with the repo.
+
+## 0041. Recorded human actions include a URL, and it was not redacted
+
+Stage 9, fixing a stage 7 bug.
+
+The stage 9 secret scan found the raw member id in `06-escalation-handoff/intervention.json`, in
+`resolution.human_actions[].url`.
+
+`Session._collect_resolution` redacted `url_after` and `aria_after` but passed the recorded actions
+through untouched. Each action carries the URL it happened on, and `/member/100001/subaccount` has a
+member id in it. The action's visible `text` has the same problem: a link labelled with an account
+number is an account number.
+
+Fixed by redacting the serialised action and parsing it back, not by redacting the two string fields
+that exist today. The evidence writer does the same, because listing fields means remembering every
+new one, and this leak is what forgetting looks like.
+
+How it was found is worth noting. Stage 7 had a test that no typed value reached the recorded actions,
+and it passed, because it only checked typed values. Nobody typed the URL. A scan of every byte of a
+finished run caught what a targeted test missed, which is the case for having both.
+
+## 0042. Tests on the saved runs read the sample evidence and never skip
+
+Final fixes.
+
+`tests/test_evidence_invariants.py` reads `evidence/curated/*/transcript.json`. It used to look in
+`evidence/*/transcript.json` and skip when nothing matched, which on a clean clone was always, since
+the sample transcripts are one level deeper. So "no snapshot refs in saved capabilities" was never
+checked against a real model run except on my machine.
+
+A skip is not harmless here. A green run with two skipped tests reads as "this holds" when it means
+"nobody looked". The tests now read committed data, a guard test fails if that data is missing, and a
+run with no refs passes instead of skipping.
+
+Rejected: keep reading `evidence/` so local runs are checked too. Then test results depend on whatever
+someone ran last, which is what broke the suite in the fresh clone check after following the README's
+dry run.
+
+Weak spot: only one sample run has a transcript, so this is checked against one real model run.
+
+## 0043. allow_draft is recorded by the caller and by the engine
+
+Final fixes.
+
+Replaying a draft is only allowed with `--allow-draft`, and the sample runs replayed drafts without
+saying so. I checked the gate instead of assuming: the same command without the flag exits 40 before
+any step runs.
+
+`meta.json` records `allow_draft` from the caller, and the engine's `preflight` event records the value
+it actually used. Two records, because `meta.json` is written by whoever creates the writer, and
+evidence that only rests on the caller's word is weaker.
+
+Runs 02 to 09 all carry the field. 02 was re-run first, and 03 to 06 were re-run afterwards for the
+same reason.
+
+## 0044. The capability catalog only reads, and running stays in replay
+
+Final fixes. The brief's first stretch goal.
+
+`src/catalog.py` and two commands, `catalog list` and `catalog describe <id>`. What it prints is the
+capability read back: inputs with types and sensitivity, outputs, business outcomes, which steps need
+approval, exit codes, and the exact command to run it. Every file is validated on load, and a broken
+one is an error naming the file, because an agent told a capability does not exist when it is really
+broken will work around a fault nobody knows about. Versions sort numerically, so 1.10.0 is newer than
+1.2.0.
+
+Rejected: a `catalog invoke` command. It would be a second way to run a capability with its own
+arguments to keep in sync. `describe` prints the `replay` command instead.
+
+Rejected: an HTTP endpoint. No server is needed, and it would expose the same information.
+
+Weak spot: the printed command assumes this repo layout, `.venv/bin/python` from the root. An agent
+elsewhere has to adjust it, and nothing checks the values it fills in against the declared types
+before the run.
+
+## 0045. Three bugs meant the sub-account outcomes could never fire
+
+Final fixes. Found while producing sample run 08.
+
+The sub-account capability declares `member_not_found`, `member_restricted` and `validation_rejected`.
+I wrote all three by hand and never replayed them. Run 08 showed none could fire.
+
+**The validation check looked for text the app never shows.** It looked for "Correct the highlighted
+fields". The app's messages are per field, like "Initial deposit must be greater than zero.", and that
+phrase is nowhere in the app. The same mistake 0027 warns about, made after writing 0027.
+
+**A step's wait timed out before outcomes were checked.** Step 4 waits for "Review Sub-Account
+Request". A rejected form never shows it, so `act()` timed out after ten seconds and the engine
+returned a `timeout` failure immediately. Recoveries and outcomes were only checked after a step
+succeeded, so even a correct check would not have been read. The lookup capability avoided this only
+because its search step waits for page load, not for text. 0023 put outcomes before postconditions but
+said nothing about wait timeouts.
+
+**The fingerprint check treated an outcome page as drift.** For a restricted or unknown member, the
+check from 0034 loads the entry page, gets an "Access Restricted" or not found title, and stops before
+step 0. The two member outcomes in this capability check after step 0, so they could never be reached.
+
+**Fixed, each with a test that fails on the old code:**
+
+1. When a step's wait times out, the engine checks that step's outcomes before retrying or reporting a
+   timeout. The run log shows `wait_timed_out_on_outcome`.
+2. The fingerprint check no longer calls a mismatch drift when the page matches an outcome declared
+   for step 0. A title change with no matching outcome still stops the run, and a test checks that.
+3. The capability is published as 1.1.0 with a pattern that matches the app's real field errors. 1.0.0
+   is unchanged because sample run 06 used it. A test checks the pattern against every message in the
+   app's error table.
+
+Run 08 was then re-run against 1.1.0 and returns `validation_rejected` with exit 10.
+
+Rejected: fix only the text check. It would still have timed out, and the more important bug was in
+the engine.
+
+Weak spot: an outcome is only recognised at the step it names. A rejected form at a step that does not
+list it still comes back as a timeout. That is right for an undeclared screen, but looks similar in a
+log.
+
+## 0046. An expired session restarts the flow
+
+Final fixes.
+
+`RecoveryAction.reauthenticate` had been in the schema since stage 2 and did nothing at replay, so
+session timeout, one of the six conditions in the brief, was not handled. Lookup 1.3.0 now declares
+`reauthenticate_after_session_expiry`: when the page says "Your session has expired", the engine goes
+back to the first page and starts again from step 0. Sample run 09 shows it, with the recovery listed
+in `recoveries_applied`.
+
+It starts over instead of resuming because an expired session loses whatever the flow built up: a
+half-filled form, a selected record, a place in a wizard. There is nothing to resume. This app has no
+login, so here reauthenticating is just the restart. A real app would sign in first, and that part
+belongs in the surface.
+
+Two limits, enforced in the engine. No restart after an irreversible step has run, because starting
+over could do it twice (0024 again). And at most `max_attempts` restarts per rule, so a check that never
+clears cannot loop forever. Either case escalates as `recovery_exhausted`, and both have a test.
+
+Recoveries are now also checked when a step's wait times out. Otherwise a step waiting for specific text
+would sit behind the expired page until the wait failed, and report a timeout.
+
+Rejected: resume at the interrupted step. That assumes the app kept state the expiry threw away, and on
+a real screen it would type into a form that is gone.
+
+Weak spot: the fault fires on the first page load, so run 09 restarts before doing anything. An expiry
+later in the flow takes the same code path but is only covered by the limit tests, not a sample run.
+The sub-account capability does not declare the rule.
+
+## 0047. A model that cannot be reached is a failure, not a crash
+
+Final fixes.
+
+Running discover with no API key used to end with the SDK's `ValueError` as a traceback and exit 1,
+outside the five result types and with no `result.json`. The same happened for any non-retryable API
+error, and for 429s or 5xx past the retry limit.
+
+`GeminiClient` now raises `ModelUnavailable` for all three, and the loop turns it into a
+`FailureResult` with exit 40, so the run leaves the same evidence as any other failure. The message is
+either the SDK's local "No API key was provided", which is produced before any request and contains no
+value, or an HTTP status. The provider's response body is never copied in, because I cannot be sure it
+has nothing sensitive in it.
+
+Rejected: check whether the key is set before creating the client, which would also avoid the SDK's
+cleanup warning. Checking whether it is empty means reading its value, and nothing here does that.
+
+Weak spot: it uses the `internal` failure class, the closest existing one. A dedicated class would be
+clearer, but that is a schema change, and I would propose it before making it.
