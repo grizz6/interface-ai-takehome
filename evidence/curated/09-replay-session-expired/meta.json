@@ -1,0 +1,24 @@
+{
+  "allow_draft": true,
+  "capability_id": "lookup-member-savings-balance",
+  "capability_version": "1.3.0",
+  "exit_code": 0,
+  "finished_at": "2026-09-14T14:55:31.856145Z",
+  "git_commit": "33a39d4fa54a1d257d935d8b8989b8ea97d499f5",
+  "kind": "replay",
+  "model": null,
+  "params_redacted": [
+    {
+      "name": "member_id",
+      "required": true,
+      "sensitivity": "pii",
+      "supplied": true
+    }
+  ],
+  "policy_path": "config/policy.json",
+  "policy_sha256": "1ae61588b4e23052d024a62fa29b9d18ba56a6ac7a08071257f0e69f5707a44f",
+  "result_kind": "success",
+  "run_id": "20260914-145531-dd2b",
+  "schema_version": "1.0",
+  "started_at": "2026-09-14T14:55:31.329992Z"
+}

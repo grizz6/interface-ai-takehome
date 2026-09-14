@@ -76,7 +76,10 @@ result kind but appears as `recoveries_applied` on a success.
 
 Irreversible steps get zero retries whatever the `WaitSpec` says, because a transient timeout and a
 completed action that did not report look identical from outside the browser, so retrying opens the
-account twice while escalating costs a human two minutes (0024). Ambiguity escalates rather than
+account twice while escalating costs a human two minutes (0024). The same reasoning bounds session
+expiry, the one condition a click cannot fix: a `reauthenticate` recovery starts the flow again from
+the entry page, but only before any irreversible step has run and only as often as the rule allows,
+and otherwise hands over to a person (0046). Ambiguity escalates rather than
 guessing, and zero and two matches are deliberately asymmetric: zero is retried against a shared
 budget, because a page still rendering reports zero for a control about to exist, while two is never
 waited on and never falls through, since a first-match fallback picks an account. That waiting was a
@@ -265,14 +268,7 @@ the load bearing judgment at the moment there is least evidence and no human wat
 it properly means the fallback proposes and a human approves, which is the escalation path that
 already exists. Multi-run stability is unmeasured: two consecutive replays are asserted to produce
 identical step sequences and identical resolved tiers, which is determinism, but nothing runs a
-capability fifty times and reports a rate, and that is the weakest claim in this report. Session
-timeout is the one runtime condition from the brief's section 3.3 with no coverage at all: no
-declared outcome, no recovery rule and no run. The target app can already simulate it: armed from
-`/dev/faults`, it sends the next page load to a "Your session has expired" page. Handling it would
-be a recovery rule using `reauthenticate`, which the schema already defines and the replay engine
-does not yet implement. This app has nothing to sign in to, so the rule would return to the entry
-screen and start the flow again; a real one would sign in first. Either way it is only safe before
-any irreversible step has run. It was cut for time. Each is a
+capability fifty times and reports a rate, and that is the weakest claim in this report. Each is a
 cut rather than an omission because the brief is explicit that a thin but real version of every
 requirement beats a polished subset, and each bought time for a requirement that is thin but real.
 

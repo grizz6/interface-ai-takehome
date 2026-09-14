@@ -1,0 +1,8 @@
+{"allow_draft": true, "at": "2026-09-14T14:55:31.666496+00:00", "capability": "lookup-member-savings-balance", "kind": "preflight", "status": "draft"}
+{"at": "2026-09-14T14:55:31.675308+00:00", "attempts": 1, "kind": "action", "step_index": 0, "tier": null}
+{"at": "2026-09-14T14:55:31.685442+00:00", "kind": "recovery", "restart": true, "rule": "reauthenticate_after_session_expiry", "step_index": 0}
+{"at": "2026-09-14T14:55:31.692165+00:00", "attempt": 1, "from_step": 0, "kind": "restart_flow", "rule": "reauthenticate_after_session_expiry"}
+{"at": "2026-09-14T14:55:31.697546+00:00", "attempts": 1, "kind": "action", "step_index": 0, "tier": null}
+{"at": "2026-09-14T14:55:31.729410+00:00", "attempts": 1, "kind": "action", "step_index": 1, "tier": "role_name"}
+{"at": "2026-09-14T14:55:31.743471+00:00", "attempts": 1, "kind": "action", "step_index": 2, "tier": "role_name"}
+{"at": "2026-09-14T14:55:31.783986+00:00", "attempts": 1, "kind": "action", "step_index": 3, "tier": "role_name"}

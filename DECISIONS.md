@@ -1436,7 +1436,7 @@ Final gap closure. Found while producing curated run 08, recorded first, then fi
 
 The sub-account capability declares `member_not_found`, `member_restricted` and
 `validation_rejected`. All three were written by hand and none was ever replayed. Producing run 08
-showed that none of them can fire.
+showed that none of them could fire.
 
 **The validation detect signal names text the application never shows.** It looks for "Correct
 the highlighted fields". The application's messages are field specific, such as "Initial deposit
@@ -1477,3 +1477,37 @@ defect was in the engine rather than in one artifact.
 Known weakness: an outcome is only recognised at the step it declares. A rejected form that
 appeared at a step whose outcomes do not list it would still come back as a timeout, which is the
 right answer for an undeclared screen but will look similar in a log.
+
+## 0046. an expired session is recovered by starting the flow again
+
+Final gap closure.
+
+`RecoveryAction.reauthenticate` existed in the schema from stage 2 and did nothing at replay, so a
+session timeout, one of the six runtime conditions the brief names, had no handling at all. Lookup
+capability 1.3.0 now declares `reauthenticate_after_session_expiry`: when the page says "Your
+session has expired", the engine goes back to the entry page and starts the flow again from step 0.
+Curated run 09 shows it, and the recovery is named in `recoveries_applied` like any other.
+
+Starting over rather than resuming, because an expired session takes with it whatever the flow had
+built up: a half filled form, a selected record, a position in a wizard. There is nothing to resume
+into. This app has nothing to sign in to, so reauthenticating here is only the restart; a real
+application would sign in first, and that is the part that belongs in the surface.
+
+Two limits, both enforced in the engine rather than left to the rule author. A restart is refused
+once any irreversible step has run, because starting over could do it twice, which is 0024's
+reasoning applied to a restart instead of a retry. And a rule restarts the run at most
+`max_attempts` times, so a detect signal that never goes away cannot loop forever. Either case
+escalates as `recovery_exhausted`. Both have a test against the live app.
+
+Recoveries are now also checked when a step's wait runs out, not only after a step completes. A
+capability whose steps wait for specific text would otherwise sit behind an expired session page
+until the wait failed, and report a timeout instead of recovering.
+
+Rejected: resume at the step that was interrupted. It assumes the application kept state the
+expiry discarded, and on a real back office screen it would type into a form that is no longer
+there.
+
+Known weakness: the fault in the target app fires on the first page load, so run 09 restarts before
+any real progress. A session that expires mid-flow takes the same code path and is covered only by
+reasoning and by the budget and irreversible tests, not by a curated run. The sub-account
+capability does not declare the rule.
