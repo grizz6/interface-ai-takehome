@@ -503,3 +503,44 @@ def test_without_a_session_the_same_control_stops_the_run() -> None:
     assert isinstance(outcome.result, NeedsHumanResult)
     assert outcome.result.reason is StuckReason.LOCATOR_AMBIGUOUS
 
+
+class DialogSurface(FakeSurface):
+    """Every action opens one browser pop-up of the given kind."""
+
+    def __init__(self, kind: str) -> None:
+        super().__init__(snapshots=[SNAPSHOT + f'  - cell "screen {i}"\n' for i in range(5)])
+        self.kind = kind
+        self.pending: list[Any] = []
+
+    def act(self, action: Any, **kw: Any) -> Any:
+        from src.surface.protocol import SeenDialog
+
+        self.pending.append(SeenDialog(kind=self.kind, message="Stay signed in?", url="x"))
+        return super().act(action, **kw)
+
+    def take_dialogs(self) -> list[Any]:
+        seen, self.pending = self.pending, []
+        return seen
+
+
+def test_a_confirm_during_discovery_goes_to_a_person_and_the_click_is_not_recorded() -> None:
+    session = FakeSession("aborted")
+    client = ScriptedClient([turn(call("click", ref="e6"))])
+    outcome = drive(client, DialogSurface("confirm"), session=session)
+
+    assert isinstance(outcome.result, NeedsHumanResult), outcome.result
+    assert outcome.result.intervention_id == "intervention-1"
+    assert session.escalated[0][0] is StuckReason.UNKNOWN_STATE
+    assert "Stay signed in?" in session.escalated[0][1].why
+    assert outcome.transcript.actions == [], "a click whose confirm was cancelled did not happen"
+
+
+def test_an_alert_during_discovery_is_reported_to_the_model_and_the_run_goes_on() -> None:
+    client = ScriptedClient([turn(call("click", ref="e6")), turn(call("finish", **FINISH_ARGS))])
+    outcome = drive(client, DialogSurface("alert"))
+
+    assert isinstance(outcome.result, SuccessResult), outcome.result
+    _, messages, _ = client.calls[1]
+    results = [m.content for m in messages if getattr(m, "role", "") == "tool_result"]
+    assert any("An alert said 'Stay signed in?'" in r for r in results)
+

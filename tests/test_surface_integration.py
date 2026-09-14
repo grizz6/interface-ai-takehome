@@ -330,3 +330,18 @@ def test_no_template_reaches_a_vocabulary_key_by_shadowed_dotted_access() -> Non
         if key in shadowed
     ]
     assert not offenders, f"use subscript access for these: {offenders}"
+
+
+# -- browser pop-ups ------------------------------------------------------------
+def test_a_confirm_is_recorded_and_answered_cancel_never_ok(surface: Any, live_app: str) -> None:
+    _goto(surface, live_app, "/search")
+    surface.take_dialogs()
+
+    answer = surface.page.evaluate("confirm('Delete this record?')")
+
+    assert answer is False, "a confirm must never be accepted automatically"
+    seen = surface.take_dialogs()
+    assert [(d.kind, d.message) for d in seen] == [("confirm", "Delete this record?")]
+    assert seen[0].url.endswith("/search")
+    assert surface.take_dialogs() == [], "taking dialogs clears them"
+

@@ -74,6 +74,8 @@ VARIANTS: dict[str, dict[str, Any]] = {
             "faults_intro": "Arm a runtime fault. It fires once on the next page load, then disarms.",
             "loan_servicing": "Loan servicing is not available in this console. A sub-account cannot be opened against a loan account.",
             "reset": "The application has been returned to its seeded state.",
+            "dialog_confirm": "Your session will expire in 2 minutes. Stay signed in?",
+            "dialog_alert": "Scheduled maintenance begins tonight at 22:00.",
         },
         "errors": {
             "member_id_required": "Enter a Member ID.",

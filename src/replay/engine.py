@@ -302,6 +302,36 @@ def _perform_recovery(run: _Run, rule: RecoveryRule) -> None:
             page.wait_for_timeout(500)
 
 
+def _dialog_check(run: _Run, step: Step) -> _Escalation | None:
+    """Decide what to do about browser pop-ups seen since the last check.
+
+    The surface has already closed each one with Cancel. An alert only has OK, so closing it
+    changes nothing: it is noted as a recovery and the run carries on. A confirm or prompt asks
+    a question, and Cancel may not be the answer the flow needed, so the run stops and asks a
+    person rather than carrying on as if nothing happened. See DECISIONS.md 0049.
+    """
+    taker = getattr(run.surface, "take_dialogs", None)
+    if not callable(taker):
+        return None
+    questions = []
+    for dialog in taker():
+        run.note("dialog", step_index=step.index, dialog=dialog.kind, message=dialog.message)
+        if dialog.kind == "alert":
+            run.recoveries.append("dismissed_alert")
+        else:
+            questions.append(dialog)
+    if not questions:
+        return None
+    first = questions[0]
+    _capture_failure(run, step.index)
+    return _Escalation(
+        StuckReason.UNKNOWN_STATE,
+        f"a {first.kind} dialog appeared at step {step.index} saying {first.message!r}. Replay "
+        "closed it with Cancel, because it never agrees to a question the capability does not "
+        "record, so the step may not have done what it should.",
+    )
+
+
 def _coerce_output(spec: OutputSpec, raw: str) -> Any:
     try:
         return COERCERS[spec.type](raw)
@@ -357,6 +387,9 @@ def _escalate(
         human_actions=len(resolution.human_actions),
     )
     run.session.resume()
+    # Pop-ups closed while the person had the browser belong to their turn, not the next step.
+    for dialog in (getattr(run.surface, "take_dialogs", lambda: [])() or []):
+        run.note("dialog_during_handoff", dialog=dialog.kind, message=dialog.message)
 
     return decide_resume(
         resolution,
@@ -482,6 +515,10 @@ def _attempt_step(run: _Run, step: Step) -> RunResult | None | _Escalation:
                 evidence=run.evidence,
             )
         except ActionTimeout as exc:
+            # A confirm closed with Cancel is a common reason for the page never moving on.
+            asked = _dialog_check(run, step)
+            if asked is not None:
+                return asked
             # A wait that times out is often waiting for a page the app replaced with an answer,
             # like a rejected form that never reaches the review page. So check for a declared
             # outcome before retrying or failing. Recoveries go first, as after a normal step,
@@ -537,6 +574,10 @@ def _attempt_step(run: _Run, step: Step) -> RunResult | None | _Escalation:
                 step_index=index,
                 evidence=run.evidence,
             )
+
+    asked = _dialog_check(run, step)
+    if asked is not None:
+        return asked
 
     run.traces.append(
         StepTrace(

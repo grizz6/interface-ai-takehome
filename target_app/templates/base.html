@@ -30,5 +30,6 @@
   <tr><td class="content">{% block content %}{% endblock %}</td></tr>
   <tr><td class="footer">{{ v.footer }}</td></tr>
 </table>
+{% if dialog %}<script>{{ dialog.kind }}({{ dialog.message|tojson }});</script>{% endif %}
 </body>
 </html>

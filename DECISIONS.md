@@ -30,8 +30,8 @@ Stage 1.
 Not found, permission denied and validation errors are real. They come from the seed data and
 the form input, with no switch: ask for a member that was never seeded and you get the not found
 page, ask for 100003 and you get permission denied, submit a deposit of zero and the server
-rejects it. The four faults on `/dev/faults` (maintenance page, session expiry, slow response,
-server error) are simulated: turned on by hand, kept in the Flask session, fired once. The line
+rejects it. The faults on `/dev/faults` (maintenance page, session expiry, slow response,
+server error, and later two browser pop-ups) are simulated: turned on by hand, kept in the Flask session, fired once. The line
 is whether the condition belongs to the data or to the runtime.
 
 Rejected: make all seven switches on the fault page. Simpler, one place to look. But a "not
@@ -1106,3 +1106,43 @@ left behind.
 Weak spot: there is no sample run of it. It is covered by a test on the real browser with a
 scripted operator, a test for the stuck locator case, and a CLI test that checks the request
 file is written.
+
+## 0049. Browser pop-ups are closed with Cancel, and a question stops the run
+
+Final fixes.
+
+The brief lists unexpected dialogs among the runtime conditions. The maintenance page covers a
+dialog that is a page of its own, but nothing handled a real browser pop-up (`alert`, `confirm`,
+`prompt`). Playwright closes those silently when nothing listens, so an unexpected `confirm()`
+was answered Cancel with no record, and the run carried on as if nothing had happened.
+
+`WebSurface` now listens for pop-ups, records each one and closes it with Cancel, and callers
+read them with `take_dialogs()`. Replay checks after every action, and before treating a wait
+that timed out as a failure:
+
+- An `alert` only has OK, so closing it changes nothing. It is noted as `dismissed_alert` in
+  `recoveries_applied` and the run goes on.
+- A `confirm`, `prompt` or `beforeunload` asks a question, and Cancel may not be what the flow
+  needed. The run stops for a person with the dialog's text in the request, or ends with
+  NeedsHuman without a session. It never answers yes.
+
+Discovery does the same: an alert is reported to the model, and a question goes to a person,
+without recording the cancelled action. The target app has `confirm_dialog` and
+`alert_dialog` faults to produce them, and sample run 10 shows the confirm case.
+
+Two related fixes. While a person has the browser, the session now waits through Playwright
+instead of `time.sleep`, because a listener only runs when Playwright gets a turn and the page
+would otherwise freeze on a pop-up until control came back. Pop-ups closed during a handoff are
+logged as the person's, not blamed on the next step. And the reason text in a handoff request
+now goes through the redactor, since it can quote a dialog.
+
+Rejected: accept confirms automatically. It would get past a harmless "stay signed in?", but
+the same code would say yes to "are you sure you want to transfer this?".
+
+Rejected: let a capability declare the expected answer to a known dialog. That is probably the
+right long-term fix, but it is a schema change (a new signal or recovery kind), so it is noted
+here rather than made.
+
+Weak spots: a person taking over cannot answer a pop-up either, because the listener closes it
+before they see it. And a pop-up raised while the fingerprint check loads the first page is
+reported as step 0.

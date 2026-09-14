@@ -159,7 +159,13 @@ def main() -> int:
     sub = parser.add_subparsers(dest="what", required=True)
 
     fault = sub.add_parser("fault", help="Arm a fault, then replay the lookup capability.")
-    fault.add_argument("name", choices=["interstitial", "slow", "server_error", "session_expired"])
+    fault.add_argument(
+        "name",
+        choices=[
+            "interstitial", "slow", "server_error", "session_expired",
+            "confirm_dialog", "alert_dialog",
+        ],
+    )
     fault.add_argument("--target", default="http://localhost:8080")
     fault.add_argument(
         "--capability", default=LOOKUP,

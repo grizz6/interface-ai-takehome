@@ -3,7 +3,7 @@
 Kept small on purpose. See target_app/README.md for routes, seed members and faults.
 
 There are two kinds of error state and they are kept separate. Not found, permission denied
-and validation errors are real: they come from the seed data and the form input. The four
+and validation errors are real: they come from the seed data and the form input. The
 faults on /dev/faults are simulated: turned on by hand, and each fires once.
 """
 from __future__ import annotations
@@ -12,13 +12,15 @@ import os
 import time
 from typing import Any
 
-from flask import Flask, Response, redirect, render_template, request, session, url_for
+from flask import Flask, Response, g, redirect, render_template, request, session, url_for
 from werkzeug.wrappers.response import Response as WerkzeugResponse
 
 from seed import MEMBERS, VARIANTS
 
 SLOW_SECONDS = 6
-FAULTS = ("interstitial", "session_expired", "slow", "server_error")
+FAULTS = (
+    "interstitial", "session_expired", "slow", "server_error", "confirm_dialog", "alert_dialog",
+)
 
 # Paths that never fire a fault: the console that arms them, the screens a fault
 # redirects to, and static assets. Without this you could not reach the console
@@ -40,7 +42,7 @@ _issued = [0]
 @app.context_processor
 def inject_variant() -> dict[str, Any]:
     """Every template reads its user-visible strings from here, never inline."""
-    return {"v": VARIANTS[VARIANT_ID]}
+    return {"v": VARIANTS[VARIANT_ID], "dialog": g.get("dialog")}
 
 
 def _v() -> dict[str, Any]:
@@ -81,6 +83,10 @@ def fire_armed_fault() -> Response | WerkzeugResponse | tuple[str, int] | None:
     if fault == "interstitial":
         session["interstitial_next"] = _requested_path()
         return redirect(url_for("maintenance"))
+    if fault in ("confirm_dialog", "alert_dialog"):
+        # A browser pop-up shown as the page loads, not a page of its own. base.html opens it.
+        kind = fault.removesuffix("_dialog")
+        g.dialog = {"kind": kind, "message": _v()["messages"][f"dialog_{kind}"]}
     return None
 
 

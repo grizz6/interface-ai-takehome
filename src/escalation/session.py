@@ -181,7 +181,7 @@ class Session:
             step_description=context.step_description,
             risk=context.risk,
             reason=reason,
-            why=context.why,
+            why=self._redact(context.why),
             url=self._redact(observation.url),
             aria_snapshot=self._redact(observation.aria_yaml),
             screenshot_path=screenshot_path,
@@ -230,7 +230,24 @@ class Session:
             if datetime.now(UTC) >= limit:
                 self.lease.transition(LeaseState.CLOSED)
                 return None
-            time.sleep(poll_interval)
+            self._wait(poll_interval)
+
+    def _wait(self, seconds: float) -> None:
+        """Wait while the person has the browser.
+
+        Waits through the page rather than time.sleep, so Playwright keeps handling browser
+        events. A pop-up raised while the person works would otherwise freeze the page until
+        control came back, because the dialog listener only runs when Playwright gets a turn.
+        """
+        page = getattr(self.surface, "page", None)
+        if page is None:
+            time.sleep(seconds)
+            return
+        try:
+            page.wait_for_timeout(seconds * 1000)
+        except Exception:  # noqa: BLE001
+            # A closed or crashed page must not end the wait; the lease decides that.
+            time.sleep(seconds)
 
     def _collect_resolution(self, intervention_id: str) -> InterventionResolution | None:
         """Read the operator's answer and add what was recorded from the page.

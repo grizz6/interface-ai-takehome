@@ -49,6 +49,7 @@ from src.surface.protocol import (
     LocatorUnresolved,
     PolicyViolation,
     Resolved,
+    SeenDialog,
     SurfaceUnavailable,
 )
 
@@ -92,6 +93,10 @@ class WebSurface:
         # tells them apart. Playwright renders an error page like any other page.
         self._last_status: int | None = None
         self._page.on("response", self._remember_status)
+        # Browser pop-ups seen since the caller last asked. Without a listener Playwright closes
+        # them silently, so a confirm() would be answered Cancel with no record of it.
+        self._dialogs: list[SeenDialog] = []
+        self._page.on("dialog", self._on_dialog)
 
     @property
     def page(self) -> Any:
@@ -107,6 +112,23 @@ class WebSurface:
         lease = self._lease.read()
         if not lease.automation_may_act:
             raise ControlLost(lease.state, lease.holder)
+
+    def _on_dialog(self, dialog: Any) -> None:
+        """Record the pop-up, then close it with Cancel.
+
+        Automation never says yes to a question it did not record, and a listener has to answer
+        every dialog or the page freezes. What happens next is the caller's decision, made from
+        `take_dialogs()`. See DECISIONS.md 0049.
+        """
+        self._dialogs.append(
+            SeenDialog(kind=str(dialog.type), message=str(dialog.message), url=self._page.url)
+        )
+        dialog.dismiss()
+
+    def take_dialogs(self) -> list[SeenDialog]:
+        """Every pop-up seen since the last call, oldest first."""
+        seen, self._dialogs = self._dialogs, []
+        return seen
 
     def _remember_status(self, response: Any) -> None:
         if response.request.is_navigation_request() and response.frame is self._page.main_frame:

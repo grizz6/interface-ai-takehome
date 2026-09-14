@@ -156,6 +156,48 @@ def test_interstitial_is_dismissed_and_the_run_still_succeeds(
     assert any(t.recovered_by == "dismiss_maintenance_interstitial" for t in result.steps)
 
 
+def test_an_unexpected_confirm_dialog_stops_the_run_instead_of_answering_it(
+    capability: Capability,
+    surface: Any,
+    policy_config: PolicyConfig,
+    evidence: EvidenceWriter,
+    live_app: str,
+) -> None:
+    """A confirm() asks a question. Replay closes it with Cancel and asks a person, never guesses."""
+    from src.models.common import StuckReason
+    from src.models.results import NeedsHumanResult
+
+    _arm(surface, live_app, "confirm_dialog")
+
+    result = _run(capability, surface, policy_config, evidence)
+
+    assert isinstance(result, NeedsHumanResult), result
+    assert result.reason is StuckReason.UNKNOWN_STATE
+    assert result.step_index == 0
+    events = [json.loads(line) for line in Path(evidence.ref.log_path).read_text().splitlines()]
+    dialogs = [e for e in events if e["kind"] == "dialog"]
+    assert [d["dialog"] for d in dialogs] == ["confirm"]
+    assert "Stay signed in?" in dialogs[0]["message"]
+    assert surface.take_dialogs() == [], "the engine should have taken what the surface saw"
+
+
+def test_an_unexpected_alert_is_closed_and_the_run_carries_on(
+    capability: Capability,
+    surface: Any,
+    policy_config: PolicyConfig,
+    evidence: EvidenceWriter,
+    live_app: str,
+) -> None:
+    """An alert only has OK, so closing it changes nothing. It is noted as a recovery."""
+    _arm(surface, live_app, "alert_dialog")
+
+    result = _run(capability, surface, policy_config, evidence)
+
+    assert isinstance(result, SuccessResult), result
+    assert result.recoveries_applied == ["dismissed_alert"]
+    assert result.outputs["savings_balance"] == 4182.55
+
+
 def test_slow_response_is_survived_by_waiting(
     capability: Capability,
     surface: Any,

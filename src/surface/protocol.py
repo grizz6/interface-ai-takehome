@@ -55,6 +55,15 @@ class PolicyViolation(SurfaceError):
 
 
 @dataclass(frozen=True)
+class SeenDialog:
+    """A browser pop-up (alert, confirm, prompt or beforeunload) and what it said."""
+
+    kind: str
+    message: str
+    url: str
+
+
+@dataclass(frozen=True)
 class Resolved:
     """A live handle to one control, plus which tier found it.
 

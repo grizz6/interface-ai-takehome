@@ -466,6 +466,29 @@ def test_approved_lets_automation_perform_the_step_itself(
     assert result.outputs["new_account_number"].startswith("90")
 
 
+def test_a_dialog_closed_during_the_handoff_is_logged_and_not_blamed_on_the_next_step(
+    wired: dict[str, Any], surface: Any, approval_policy: Any
+) -> None:
+    class Operator(ScriptedOperator):
+        def human_actions(self, page: Any) -> None:
+            page.evaluate("confirm('Leave this page?')")
+
+    session = Operator(
+        surface,
+        outcome=ResolutionOutcome.APPROVED,
+        session_id="dialog-during-handoff",
+        lease_path=wired["lease"],
+        interventions_dir=wired["interventions"],
+        evidence_sink=wired["writer"],
+    )
+    result = _run(wired, surface, approval_policy, session)
+
+    assert isinstance(result, SuccessResult), result
+    log = Path(wired["writer"].ref.log_path).read_text()
+    assert '"dialog_during_handoff"' in log and "Leave this page?" in log
+    assert '"kind": "dialog"' not in log
+
+
 def test_retry_step_on_an_irreversible_step_is_refused_by_the_console_and_the_engine(
     wired: dict[str, Any], surface: Any, approval_policy: Any
 ) -> None:

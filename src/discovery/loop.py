@@ -505,6 +505,9 @@ class DiscoveryRun:
             return self._hand_over_or_stop(StuckReason.STEP_TIMEOUT, str(exc))
 
         self._consecutive_blocks = 0
+        closed = self._dialogs_after(kind)
+        if isinstance(closed, tuple):
+            return closed
         self.transcript.actions.append(
             ActionRecord(
                 seq=len(self.transcript.actions),
@@ -526,7 +529,35 @@ class DiscoveryRun:
             ref=ref,
         )
         strategy = outcome.resolved_strategy or "n/a"
-        return f"Done. The control was found by {strategy}. Look to see the result.", False
+        return (
+            f"Done. The control was found by {strategy}.{closed} Look to see the result.",
+            False,
+        )
+
+    def _dialogs_after(self, kind: ActionType) -> str | tuple[str, bool]:
+        """Browser pop-ups the action caused, which the surface has already closed with Cancel.
+
+        An alert is reported to the model and the run goes on. A confirm or prompt asked a
+        question the model has no tool to answer, so it goes to a person, or stops the run.
+        Returns text to add to the tool result, or the tool result itself when handing over.
+        """
+        taker = getattr(self.surface, "take_dialogs", None)
+        seen = list(taker()) if callable(taker) else []
+        notes = ""
+        for dialog in seen:
+            self._event(
+                EventKind.VERIFICATION, dialog=dialog.kind, message=dialog.message,
+                action_kind=kind.value,
+            )
+            if dialog.kind == "alert":
+                notes += f" An alert said {dialog.message!r} and was closed."
+                continue
+            return self._hand_over_or_stop(
+                StuckReason.UNKNOWN_STATE,
+                f"a {dialog.kind} dialog appeared saying {dialog.message!r} and was closed with "
+                "Cancel. Nothing in discovery can answer it.",
+            )
+        return notes
 
     def _refused(
         self, exc: PolicyViolation, kind: ActionType, attempted: str | None = None

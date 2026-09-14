@@ -101,6 +101,8 @@ the next page load and then turns itself off. Clear Armed Fault cancels it witho
 | `session_expired` | Sends you to the session expired page |
 | `slow` | About six seconds of delay, then the page |
 | `server_error` | A 500 error page |
+| `confirm_dialog` | The page opens a browser `confirm()` pop-up asking "Stay signed in?" |
+| `alert_dialog` | The page opens a browser `alert()` pop-up about scheduled maintenance |
 
 Faults only fire on GET requests; `DECISIONS.md` 0002 explains why and what that rules out. The
 fault page, the pages a fault sends you to, and static files never fire a fault, so you can

@@ -54,8 +54,10 @@ through without showing it (0024). A locator that matches nothing is retried whi
 loads, but one that matches two elements stops straight away, because guessing could pick the
 wrong account. The waiting fixed a real bug where a control that had not rendered yet quietly
 fell through to a weaker tier. An expired session restarts the flow from the first page, but
-never after an irreversible step and never more times than the rule allows (0046). Each of the
-six runtime conditions in brief 3.3 has a sample run. Drift is handled more loosely: if the first
+never after an irreversible step and never more times than the rule allows (0046). A browser
+pop-up is closed with Cancel: an alert is noted and the run goes on, but a confirm stops the run
+for a person, since replay never answers a question it did not record (0049). Each of the six
+runtime conditions in brief 3.3 has a sample run. Drift is handled more loosely: if the first
 page does not match its saved fingerprint the run stops before step 0, unless the page is a
 declared outcome. That can stop a run on a harmless rebrand (0025, 0045).
 
@@ -90,8 +92,9 @@ a demonstration.
 A run is stuck for a named reason: a locator that matches several elements or none, a page it
 does not recognise, a risky action that needs approval, recovery that ran out, a timeout, or too
 many steps. Discovery also stops when the page looks the same three times in a row, or after
-three policy refusals in a row (0015), and can hand over just like replay (0048). Control is a lease with fixed state changes, and every
-`act()` and `resolve()` checks it before touching the browser. It is a polled file, so either
+three policy refusals in a row (0015), and hands over the same way replay does (0048). Control
+is a lease with fixed state changes, and every `act()` and `resolve()` checks it before
+touching the browser. It is a polled file, so either
 process can restart (0029). The person works in the same visible browser window. I cut screen
 streaming, so they have to be at that machine (0030). The request includes the capability, step,
 reason, screenshot and page snapshot, and the person's clicks and changed fields are recorded.
