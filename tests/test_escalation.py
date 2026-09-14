@@ -1,9 +1,8 @@
 """Control transfer, with no human in the room.
 
-Every handoff here is driven programmatically through the operator console's own Flask test
-client, so the same routes a person would click are the ones under test. Nothing simulates the
-console by writing its files directly, because the thing most likely to be wrong is the
-console's own lease handling.
+Every handoff here goes through the operator page's own Flask test client, so the routes a
+person would click are the ones being tested. Nothing fakes the operator page by writing its
+files directly, because its lease handling is the most likely thing to be wrong.
 """
 from __future__ import annotations
 
@@ -55,8 +54,8 @@ def restore_the_shared_lease(surface: Any) -> Iterator[None]:
 
     Attaching a lease is how a Session takes ownership of a surface, and the surface here
     outlives the test that attached one. Without this, a run that ends closed or paused
-    leaves every later test in the suite unable to touch the browser at all, which is
-    invariant 10 working correctly against the wrong target.
+    leaves every later test unable to touch the browser, because the lease check is doing
+    its job on the wrong test.
     """
     original = surface._lease
     yield
@@ -114,7 +113,7 @@ def test_the_lease_file_round_trips(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Invariant 10
+# No browser action without the lease
 # ---------------------------------------------------------------------------
 def test_act_without_the_lease_raises_and_touches_no_playwright(
     surface: Any, live_app: str
@@ -307,7 +306,7 @@ def test_an_irreversible_step_pauses_and_writes_the_five_required_fields(
 def test_the_intervention_file_carries_parameter_names_and_no_values(
     wired: dict[str, Any], surface: Any, approval_policy: Any
 ) -> None:
-    """Invariant 6 applies to a handoff packet exactly as it applies to evidence."""
+    """A handoff request must not hold parameter values, just like evidence."""
     session = Session(
         surface,
         session_id="redaction-test",
@@ -406,7 +405,7 @@ def test_completed_manually_skips_the_step_and_verifies_the_page(
     # The output was read off the screen the human left behind, not off a remembered one.
     assert result.outputs["new_account_number"].startswith("90")
 
-    # Invariant 7. Not a new context, not a new page, not a reconnect.
+    # Same browser context and same page throughout. Nothing was reopened.
     assert surface._context is context_before
     assert surface._page is page_before
     assert LeaseStore(wired["lease"]).read().state is LeaseState.RUNNING
@@ -533,7 +532,7 @@ def test_the_engine_refuses_retry_step_even_when_the_console_is_bypassed(
 def test_captured_human_actions_name_the_field_and_never_its_value(
     wired: dict[str, Any], surface: Any, approval_policy: Any
 ) -> None:
-    """Invariant 6 applies to a person's keystrokes exactly as it applies to a model's."""
+    """What a person types is never recorded, just as with the model."""
 
     class Operator(ScriptedOperator):
         def human_actions(self, page: Any) -> None:
@@ -568,14 +567,13 @@ def test_captured_human_actions_name_the_field_and_never_its_value(
         assert typed not in recorded, f"{typed!r} was captured as a value"
 
     # Including the url each action carried. A path like /member/100001/subaccount is a member
-    # id in a URL, and the phase 9 sweep caught exactly that reaching an intervention file.
+    # id in a URL, and the secret scan once found exactly that in an intervention file.
     for action in actions:
         assert "100001" not in (action.url or ""), "a raw value survived in a captured url"
 
-    # The after snapshot is a different thing and deliberately shows the screen as it stands,
-    # because it is the evidence that survives when the injected recorder does not. It goes
-    # through the same Redactor as evidence does, so declared sensitive values are replaced
-    # there too.
+    # The after snapshot shows the screen as it is, since it is what remains if the page
+    # recorder gets lost. It goes through the same redactor as evidence, so declared sensitive
+    # values are replaced there too.
     assert stored.resolution.aria_after is not None
     assert "Sub-Account Opened" in stored.resolution.aria_after
 

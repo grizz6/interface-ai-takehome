@@ -1,7 +1,7 @@
 """The parser, against the real captures it was written from.
 
-These run without a browser. They exist because the parser is the one piece of this phase
-whose correctness is a claim about a third party format, so it is pinned to real output.
+These run without a browser. The parser depends on Playwright's snapshot format, so it is
+tested against real output rather than a guess.
 """
 from __future__ import annotations
 

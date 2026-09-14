@@ -1,9 +1,8 @@
 """Tool schemas, and the prompt that describes them.
 
-JSON Schema validity is checked structurally rather than with a meta validator, because
-adding `jsonschema` for one assertion is a dependency this repo does not need. What is
-checked is the part that actually breaks a provider call: dangling $ref, required naming a
-property that is not there, an array without items.
+The JSON Schemas are checked by walking them rather than with a validator, since adding
+`jsonschema` for one test is not worth it. The checks cover what actually breaks a provider
+call: a leftover $ref, a required property that does not exist, an array without items.
 """
 from __future__ import annotations
 
@@ -63,7 +62,7 @@ def test_every_tool_schema_is_structurally_valid(name: str) -> None:
 
 
 def test_no_tool_lets_the_model_author_a_locator() -> None:
-    """The model points at refs. describe() builds locators. Invariant 9 at the boundary."""
+    """The model points at refs and describe() builds the locators, so no tool takes one."""
     found: list[str] = []
 
     def scan(node: Any, path: str) -> None:
@@ -84,7 +83,7 @@ def test_no_tool_lets_the_model_author_a_locator() -> None:
 
 
 def test_there_is_no_wait_tool() -> None:
-    """Deliberate. See DECISIONS.md 0010."""
+    """On purpose. See DECISIONS.md 0010."""
     assert not [n for n in TOOLS if "wait" in n or "sleep" in n]
 
 
@@ -100,7 +99,7 @@ def test_inline_defs_resolves_references() -> None:
     assert "$defs" not in schema
 
 
-# -- the finish contract, checked against the artifact models it was derived from -
+# -- finish, checked against the models its schema comes from --------------------
 WELL_FORMED = {
     "capability_name": "open-member-subaccount",
     "description": "Opens a sub-account against a member deposit relationship.",
@@ -140,7 +139,7 @@ def test_a_well_formed_finish_payload_round_trips_into_the_artifact_models() -> 
     assert param.name == "member_id"
     assert param.sensitivity == "pii"
 
-    # the ref becomes a locator in phase 5; everything else maps straight across
+    # the ref becomes a locator later; everything else maps straight across
     raw = dict(WELL_FORMED["outputs"][0]["extraction"])
     raw.pop("ref")
     spec = ExtractionSpec(

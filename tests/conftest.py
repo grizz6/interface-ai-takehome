@@ -1,9 +1,9 @@
 """Builders for a valid Capability, so each test can invalidate exactly one thing.
 
 The fixture is modelled on the real flow in target_app: deep link to a member, pick the
-Deposit Accounts Select, fill the sub-account form, confirm. It deliberately uses all three
-locator tiers and carries one risky_irreversible step, so the round trip test covers the
-parts of the schema that are easy to get wrong.
+Deposit Accounts Select, fill the sub-account form, confirm. It uses three locator tiers and
+has one risky_irreversible step, so the round trip test covers the parts of the schema that are
+easy to get wrong.
 """
 from __future__ import annotations
 
@@ -291,8 +291,8 @@ def assert_error(exc: Any, fragment: str) -> None:
 
 # ---------------------------------------------------------------------------
 # Integration fixtures: the real target app on a free port, a real Chromium.
-# Session scoped because one browser context per surface is invariant 7, and
-# because launching a browser per test would make the suite unpleasant to run.
+# Session scoped because a surface keeps one browser context for its life, and
+# launching a browser for every test would make the suite slow.
 # ---------------------------------------------------------------------------
 import os
 import socket

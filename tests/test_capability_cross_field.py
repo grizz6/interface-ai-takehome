@@ -1,9 +1,8 @@
 """One failing test per cross field validator on Capability.
 
-These are the rules that cannot be expressed on a single field, and they are the ones that
-keep an artifact internally consistent. A capability that passes field validation but
-references an input nobody declared is exactly the artifact that fails at three in the
-morning during a replay, not at review time.
+These are the rules that involve more than one field, and they keep a capability consistent
+with itself. A capability that passes field validation but uses an input nobody declared would
+otherwise fail during a replay instead of when it is reviewed.
 """
 from __future__ import annotations
 

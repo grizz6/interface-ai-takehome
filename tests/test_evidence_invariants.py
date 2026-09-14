@@ -1,14 +1,13 @@
-"""Invariants checked against evidence a real run actually produced.
+"""Checks against evidence from real runs.
 
-Everything else in this suite tests the system against fixtures and scripted models. This
-file tests the output of live runs, which is the only place invariant 9 can be checked against
-a real model rather than against one whose turns we wrote ourselves.
+The rest of the tests use fixtures and scripted models. This file checks the output of a real
+model run, which is the only way to check that no snapshot ref ended up in a saved locator
+when the model's turns were not written by us.
 
-It reads the curated set, which is tracked, so these run in every checkout. They used to glob
-evidence/*/transcript.json, which in a clean clone matches nothing because the curated
-transcripts sit one level deeper, and a skipped invariant test is an unchecked invariant.
-Developer runs at the top of evidence/ are deliberately not read: the result of this suite should
-not depend on what someone happened to run last.
+It reads the committed sample runs, so it runs on every checkout. It used to look in
+evidence/*/transcript.json, which matches nothing on a clean clone because the sample
+transcripts are one level deeper, so the tests were silently skipped. Local runs at the top of
+evidence/ are not read, so results do not depend on what someone ran last. See DECISIONS.md 0042.
 """
 from __future__ import annotations
 
@@ -41,7 +40,7 @@ def _refs_used(transcript: dict[str, object]) -> set[str]:
 
 def test_the_curated_evidence_contains_a_real_transcript() -> None:
     """An empty parameter set makes pytest skip the tests below silently. This makes it fail."""
-    assert TRANSCRIPTS, "evidence/curated/ holds no transcript, so invariant 9 is unchecked"
+    assert TRANSCRIPTS, "evidence/curated/ holds no transcript, so nothing is being checked"
 
 
 @pytest.mark.parametrize("path", TRANSCRIPTS, ids=lambda p: p.parent.name)
@@ -53,7 +52,7 @@ def test_a_real_transcript_still_validates(path: Path) -> None:
 
 @pytest.mark.parametrize("path", TRANSCRIPTS, ids=lambda p: p.parent.name)
 def test_no_ref_from_a_real_run_reached_a_recorded_bundle(path: Path) -> None:
-    """Invariant 9, against a real model for the first time.
+    """No snapshot ref from a real model run ended up in a saved locator.
 
     The ActionRecord validator already rejects a bundle carrying the ref it was built from.
     This is broader: it checks EVERY bundle in the transcript against EVERY ref the run used
@@ -63,8 +62,8 @@ def test_no_ref_from_a_real_run_reached_a_recorded_bundle(path: Path) -> None:
     raw = json.loads(path.read_text())
     refs = _refs_used(raw)
     if not refs:
-        # A run blocked or stalled before resolving anything used no refs, so the invariant holds
-        # vacuously. That is a pass, not a skip: nothing about it went unchecked.
+        # A run that was blocked or stalled before using any refs has nothing to check. That is
+        # a pass, not a skip.
         return
 
     bundles: list[tuple[str, object]] = []

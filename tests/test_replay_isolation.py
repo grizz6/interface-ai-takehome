@@ -1,12 +1,11 @@
-"""Invariant 2, proved mechanically rather than asserted in prose.
+"""Replay never imports a model client, checked by code rather than by a comment.
 
-The design rules call this "a claim the reviewer will check". A comment saying replay has no model
-dependency is worth nothing, because the day someone adds a convenient import from
-src.discovery the comment stays true looking and the claim quietly stops being true.
+A comment saying replay has no model dependency stops being true the day someone adds a handy
+import from src.discovery, and nobody notices.
 
-Two independent proofs. A static walk of the transitive import graph, which catches an import
-that exists but is never executed. And a runtime check in a clean subprocess, which catches
-anything the static walk cannot see, such as a deferred import inside a function.
+Two separate checks. A static walk of the import graph, which catches an import that exists but
+never runs. And a runtime check in a fresh subprocess, which catches what the static walk
+misses, like an import inside a function.
 """
 from __future__ import annotations
 
@@ -69,7 +68,7 @@ def test_the_replay_import_graph_reaches_no_model() -> None:
         if imported.startswith(FORBIDDEN_PREFIXES)
     ]
     assert not offenders, (
-        "replay must not reach a model client, per invariant 2:\n" + "\n".join(offenders)
+        "replay must not reach a model client:\n" + "\n".join(offenders)
     )
     assert len(graph) > 5, "the walk found suspiciously little; it may not be following edges"
 

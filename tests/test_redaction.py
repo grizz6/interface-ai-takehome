@@ -1,4 +1,4 @@
-"""Invariant 6: nothing marked pii or secret reaches disk."""
+"""Nothing marked pii or secret reaches disk."""
 from __future__ import annotations
 
 from src.policy.redaction import Redactor

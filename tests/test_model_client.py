@@ -1,8 +1,7 @@
-"""The model client seam. No network in any test here.
+"""The model client. No network in any test here.
 
-GeminiClient is exercised only through its pure translation functions. The request it would
-send is asserted; the sending is not, because a test that needs a key and a quota is a test
-that does not run.
+GeminiClient is only tested through its translation functions. The request it would send is
+checked, but nothing is sent, because a test that needs a key and quota would not get run.
 """
 from __future__ import annotations
 
@@ -180,7 +179,7 @@ def test_a_missing_key_raises_model_unavailable_before_any_request(
     """Both key variables are removed first, so this can never reach the network.
 
     It used to escape as the SDK's ValueError and end the discover command with a traceback and
-    exit 1, outside the result contract.
+    exit 1, outside the five result types.
     """
     from src.discovery.client import ModelUnavailable
 

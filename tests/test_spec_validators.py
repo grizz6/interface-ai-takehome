@@ -55,7 +55,7 @@ def test_wait_on_load_needs_no_signal() -> None:
 
 
 def test_a_sensitive_param_may_not_carry_an_example() -> None:
-    """design rule 6, enforced by the schema rather than by discipline."""
+    """The schema itself refuses to hold a sensitive example value."""
     with pytest.raises(ValidationError) as exc:
         ParamSpec(
             name="ssn",

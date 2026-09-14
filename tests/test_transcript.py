@@ -1,4 +1,4 @@
-"""The transcript, and the field phase 5 cannot work without."""
+"""The transcript, and the locator bundle the recorder cannot work without."""
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -31,7 +31,7 @@ def bundle(name: str = "Search") -> LocatorBundle:
     )
 
 
-# -- invariant 9, enforced rather than hoped for ---------------------------------
+# -- refs never reach a saved bundle --------------------------------------------
 def test_a_ref_may_not_survive_into_a_recorded_bundle() -> None:
     """The named test: no ActionRecord.bundle can contain a ref string."""
     with pytest.raises(ValidationError) as exc:
@@ -79,7 +79,7 @@ def test_a_clean_bundle_is_accepted_and_similar_looking_text_is_not_a_false_posi
     assert record.bundle is not None
 
 
-# -- the bundle is load bearing --------------------------------------------------
+# -- actions on a control must have a bundle ------------------------------------
 @pytest.mark.parametrize("kind", ["click", "type", "select"])
 def test_an_action_on_a_control_must_carry_its_bundle(kind: str) -> None:
     with pytest.raises(ValidationError) as exc:

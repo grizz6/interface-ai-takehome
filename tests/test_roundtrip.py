@@ -53,7 +53,7 @@ def test_capability_is_frozen() -> None:
 
 
 def test_sensitive_input_carries_no_value_into_the_serialized_artifact() -> None:
-    """design rule 6, asserted on the bytes that would hit disk."""
+    """No sensitive value in the bytes that would be written to disk."""
     payload = json.loads(valid_capability().model_dump_json())
     member_id = next(p for p in payload["inputs"] if p["name"] == "member_id")
     assert member_id["sensitivity"] == "pii"

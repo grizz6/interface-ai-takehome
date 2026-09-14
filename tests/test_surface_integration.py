@@ -1,8 +1,8 @@
 """describe() and resolve() against the real target app in a real browser.
 
-Identity is asserted by DOM id rather than by accessible name, because the whole point of
-the Select pair is that their names are identical. Reading the id back off the resolved
-element is the only assertion that actually proves tier 3 picked the right one of the two.
+Elements are identified by DOM id rather than accessible name, because the two Select buttons
+have the same name. Reading the id off the resolved element is the only way to show tier 3
+picked the right one.
 """
 from __future__ import annotations
 
@@ -101,7 +101,7 @@ def test_an_ambiguous_bundle_raises_and_does_not_pick_the_first_match(
 def test_ambiguity_is_raised_rather_than_falling_through_to_a_fallback(
     surface: Any, live_app: str
 ) -> None:
-    """A working fallback must NOT rescue an ambiguous primary. Invariant 4."""
+    """A fallback that works must not rescue a primary that matched two elements."""
     from src.models.locator import ContainerOrdinalLocator, ContainerRef, LocatorBundle, RoleNameLocator
 
     _goto(surface, live_app, "/member/100001")
@@ -121,7 +121,7 @@ def test_ambiguity_is_raised_rather_than_falling_through_to_a_fallback(
         surface.resolve(bundle)
 
 
-# -- invariant 9 under test -----------------------------------------------------
+# -- snapshot refs never reach a bundle -----------------------------------------
 def test_no_ref_from_any_observation_ever_reaches_a_bundle(
     surface: Any, live_app: str
 ) -> None:

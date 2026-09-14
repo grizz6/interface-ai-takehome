@@ -1,14 +1,11 @@
-"""Invariant 6 under test: no credential may reach evidence or a capability artifact.
+"""No credential may end up in evidence, capabilities or any tracked file.
 
-This is the exposure that stays open no matter how careful the redactor is, because a leak
-needs only one path that forgot to call it. So rather than trusting the writers, this walks
-every byte that actually landed on disk and looks for things shaped like credentials.
+However careful the redactor is, one code path that forgets to call it is enough to leak. So
+instead of trusting the writers, this reads every byte that was written and looks for anything
+shaped like a credential.
 
-NOTHING HERE EVER PRINTS A MATCHED VALUE. A test that fails by echoing the secret it found
-has published it to CI logs, terminal scrollback and anywhere those are shipped. Findings
-carry the file and the field, never the match.
-
-This test belongs in REPORT.md's Safety section.
+Nothing here ever prints a matched value. A test that fails by printing the secret it found has
+just put it in CI logs and terminal history. Findings name the file and field only.
 """
 from __future__ import annotations
 
@@ -175,9 +172,9 @@ def test_a_finding_never_reproduces_the_value_it_found() -> None:
     assert set(vars(finding)) == {"path", "rule", "field"}
 
 
-# -- the assertion that matters --------------------------------------------------
+# -- the main check -------------------------------------------------------------
 def test_no_credential_has_reached_evidence_or_capabilities() -> None:
-    """Invariant 6, checked against what is actually on disk rather than trusted."""
+    """Check what is actually on disk instead of trusting the writers."""
     findings = scan(SCANNED_ROOTS)
     assert not findings, "credential shaped strings found:\n" + "\n".join(
         str(f) for f in findings
@@ -187,14 +184,12 @@ def test_no_credential_has_reached_evidence_or_capabilities() -> None:
 def scan_run_directory(directory: Path, redacted: dict[str, str] | None = None) -> list[Finding]:
     """Every byte of one completed run, including dom.html and aria.yaml.
 
-    Those two are the new exposure and the most likely place a real value survives. A DOM dump
-    is the whole page including hidden inputs and every value the operator typed; an aria
-    snapshot carries every accessible name on screen. Both are text, both are written by the
-    same redactor as everything else, and both are large enough that nobody reads them.
+    Those two are the most likely place for a real value to survive. A DOM dump is the whole
+    page, hidden inputs and typed values included, and an aria snapshot has every accessible
+    name on screen. Both go through the same redactor, and both are too big for anyone to read.
 
-    `redacted` is what the caller declared with --redact. Finding one of those in a completed
-    run means the redaction seam was bypassed somewhere, which is a harder failure than a
-    credential shaped string: it means a path exists that does not go through the writer.
+    `redacted` is what the caller passed with --redact. Finding one of those in a finished run
+    means something wrote to disk without going through the redactor.
     """
     findings = scan([directory])
     for name, value in (redacted or {}).items():

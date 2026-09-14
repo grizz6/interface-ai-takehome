@@ -1,15 +1,12 @@
 """The CLI, run as a real subprocess.
 
-A subprocess rather than calling main() directly, for two reasons. The CLI launches its own
-browser and Playwright's sync API refuses a second instance in one thread. And the exit code
-is part of the contract: a caller branches on it without parsing stdout, so the thing worth
-asserting is the code the process actually returned.
+A subprocess rather than calling main() directly, for two reasons. The CLI starts its own
+browser, and Playwright's sync API will not start a second one in the same thread. And callers
+rely on the exit code, so the thing to check is the code the process really returned.
 
-EVERY shell out asserts the return code first, and the failure message carries stderr. A
-subprocess that dies otherwise surfaces as a TypeError on None several lines downstream, which
-tells you nothing about what went wrong. That is the same expected versus observed standard the
-FailureResult contract requires of the system, and a test suite that does not hold itself to it
-has no business asserting it elsewhere.
+Every subprocess call checks the return code first and includes stderr in the failure message.
+Otherwise a crashed subprocess shows up as a TypeError on None a few lines later, which tells
+you nothing.
 
 No network: every run here goes through --dry-run. No run writes into the repository's
 evidence/ directory; every one is given a temporary path.

@@ -3,7 +3,7 @@
 The surface is faked for most of these because the behaviour under test is the loop's, not the
 browser's: what it does when a checkpoint fails, when actions keep being refused, when the
 screen stops changing. The last test uses the real WebSurface against the live target app, to
-prove the seam holds when both halves are real and only the model is scripted.
+show the loop works with a real browser when only the model is scripted.
 """
 from __future__ import annotations
 
@@ -157,7 +157,7 @@ def test_a_run_that_finishes_returns_success_with_the_verified_values() -> None:
 
 
 def test_the_transcript_keeps_the_bundle_for_every_action() -> None:
-    """Without this phase 5 has nothing to compile."""
+    """Without the bundles the recorder has nothing to compile."""
     client = ScriptedClient(
         [turn(call("click", ref="e6")), turn(call("finish", **FINISH_ARGS))]
     )
@@ -302,19 +302,17 @@ def test_a_screenshot_goes_up_on_the_first_turn_and_after_look() -> None:
     assert shots(1) == 2, "look() asked for another"
 
 
-# -- the seam, with everything real except the model -----------------------------
+# -- everything real except the model -------------------------------------------
 def test_the_loop_drives_the_real_surface_with_a_scripted_model(
     surface: Any, live_app: str
 ) -> None:
     """Real browser, real target app, real policy gate, real verification. Scripted model.
 
-    This is the proof that the seam holds: nothing in the loop knows whether the turns came
-    from Gemini or from a list, so a run like this exercises the production path end to end
-    without a key, a quota, or a network.
+    The loop cannot tell whether the turns came from Gemini or from a list, so this runs the
+    real code path without a key, quota or network.
 
-    Refs are read off a live observation first and only then scripted, because refs are
-    issued per snapshot and cannot be written down in advance. That is the same constraint
-    invariant 9 describes, showing up in a test.
+    Refs are read from a live snapshot first and only then scripted, because refs change with
+    every snapshot and cannot be written down in advance.
     """
     from src.surface.actions import NavigateAction
 

@@ -1,6 +1,6 @@
 """The catalog: what exists, which version is meant, and what happens when nothing matches.
 
-Only the parts with logic in them. Rendering is glue and is not tested, per design rules section 9.
+Only the parts with logic in them. The text rendering is not tested.
 """
 from __future__ import annotations
 

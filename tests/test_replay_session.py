@@ -1,4 +1,4 @@
-"""An expired session, which the only honest recovery for is to start the flow again.
+"""An expired session, where the only fix is to start the flow again.
 
 Drives the live app. The session_expired fault is armed through the developer console in the
 same browser, exactly as tests/test_replay.py arms the other faults, and then the run is left to

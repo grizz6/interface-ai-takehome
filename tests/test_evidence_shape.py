@@ -1,9 +1,8 @@
-"""Phase 8: what a run directory contains, and what it must never contain.
+"""What a run folder contains, and what it must never contain.
 
-The claim under test is that a reviewer can open any evidence directory, know which code and
-which allowlist produced it, and read a post mortem if it did not succeed. That claim is only
-worth making if it holds for a discovery run and a replay run equally, so the first test here
-compares the two directly rather than checking each in isolation.
+Anyone opening a run folder should be able to see which code and allowlist produced it, and
+read the failure files if it did not succeed. That has to be true for discovery and replay
+alike, so the first test compares the two folders directly.
 """
 from __future__ import annotations
 
@@ -70,7 +69,7 @@ def test_a_discovery_run_and_a_replay_run_produce_the_same_shaped_directory(
 
     # A scripted discovery run: no network, no key, and it drives the same live app on the
     # same surface. A second WebSurface would mean a second Playwright loop in one thread,
-    # which the sync API refuses, and inventing one would also break invariant 7.
+    # which the sync API refuses.
     discovery_writer = _writer(tmp_path, "discovery-run", kind="discovery")
     outcome = run_discovery(
         goal="open the member lookup screen",

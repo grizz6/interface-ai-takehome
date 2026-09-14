@@ -1,9 +1,9 @@
 """Replay against the real target app, with no model anywhere in the process.
 
-Every test here drives the committed artifact through a live Chromium against a live Flask
-app. That is the point: a replay test that mocks the surface proves the engine talks to
-itself correctly and proves nothing about determinism. The faults are armed through the
-developer console the same way a human would arm them, then the run is left to cope.
+Every test here runs a committed capability in a real Chromium against the running Flask
+app. A replay test with a fake surface would only show the engine agrees with itself. Faults
+are turned on through the fault page, the same way a person would, and then the run has to
+deal with them.
 """
 from __future__ import annotations
 
@@ -110,11 +110,11 @@ def test_happy_path_extracts_and_coerces_the_balance(
 def test_unknown_member_is_a_business_outcome_not_a_failure(
     capability: Capability, surface: Any, policy_config: PolicyConfig, evidence: EvidenceWriter
 ) -> None:
-    """The single most important test in the phase.
+    """Probably the most important test in this file.
 
-    A member id with no record fails the step postcondition and fails the checkpoint. If
-    outcomes were evaluated after either of those, this run would be reported as a crash and
-    a human would be paged for an answer the system already had.
+    A member id with no record fails the step postcondition and the checkpoint. If outcomes
+    were checked after either of those, this would be reported as a crash and a person would
+    be paged for an answer the run already had.
     """
     result = _run(capability, surface, policy_config, evidence, {"member_id": "999999"})
 

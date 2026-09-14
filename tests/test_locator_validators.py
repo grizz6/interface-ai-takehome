@@ -1,4 +1,4 @@
-"""LocatorBundle validators. A bundle is an ordered strategy list, not a selector bag."""
+"""LocatorBundle validators. A bundle is an ordered list of strategies, not a pile of selectors."""
 from __future__ import annotations
 
 import pytest
