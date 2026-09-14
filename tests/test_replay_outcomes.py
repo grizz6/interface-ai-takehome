@@ -64,3 +64,36 @@ def test_a_rejected_form_is_a_business_outcome_even_though_the_wait_times_out(
     assert result.code == "validation_rejected"
     assert result.detected_at_step == 4
     assert [s.index for s in result.steps] == [0, 1, 2, 3, 4]
+
+
+@pytest.mark.parametrize(
+    ("member_id", "code"),
+    [("100003", "member_restricted"), ("999999", "member_not_found")],
+)
+def test_a_member_outcome_on_the_entry_screen_is_not_mistaken_for_drift(
+    member_id: str, code: str, live_app: str, surface: Any, policy_config: Any, tmp_path: Path
+) -> None:
+    """The fingerprint check used to stop these at pre-flight with surface_unavailable."""
+    capability = _subaccount(live_app, real_validation_signal=False)
+
+    result = _run(capability, _params(member_id=member_id), surface, policy_config, tmp_path)
+
+    assert isinstance(result, BusinessOutcomeResult), result
+    assert result.code == code
+    assert result.detected_at_step == 0
+
+
+def test_a_real_title_change_still_stops_at_pre_flight(
+    live_app: str, surface: Any, policy_config: Any, tmp_path: Path
+) -> None:
+    """The exemption is for declared outcomes only. Real drift still stops the run."""
+    data = json.loads(SUBACCOUNT.read_text())
+    data["surface"]["base_url"] = live_app
+    data["surface"]["fingerprint"]["title"] = "A Different Vendor Console"
+    capability = Capability.model_validate(data)
+
+    result = _run(capability, _params(), surface, policy_config, tmp_path)
+
+    assert result.kind == "failure", result
+    assert result.error_class.value == "surface_unavailable"
+    assert result.step_index == -1

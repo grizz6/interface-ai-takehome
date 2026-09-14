@@ -128,7 +128,25 @@ def check_fingerprint(
             FailureClass.SURFACE_UNAVAILABLE,
         )
     observation = surface.observe()
+    drift = _drift(capability, surface, observation, evidence)
+    if drift is None:
+        return None
 
+    # A declared business outcome is not drift. A restricted or unknown member is sent to a
+    # different screen with a different title, and calling that "the application changed"
+    # stopped the run before step 0, where the outcome it had declared would have been reported.
+    # Only outcomes the run can report at step 0 count, so a mismatch that no step would
+    # classify still stops here. See DECISIONS.md 0045.
+    for outcome in capability.known_outcomes:
+        if outcome.check_after_step in (None, 0) and surface.evaluate(outcome.detect):
+            return None
+    return drift
+
+
+def _drift(
+    capability: Capability, surface: Any, observation: Any, evidence: EvidenceRef
+) -> FailureResult | None:
+    fingerprint = capability.surface.fingerprint
     if fingerprint.title and fingerprint.title != observation.title:
         return _failure(
             evidence,
