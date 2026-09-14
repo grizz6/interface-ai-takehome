@@ -982,11 +982,14 @@ moment it is written, not later.
 
 **Update, final gap closure.** Curated run `07-replay-permission-denied` replays the lookup
 capability for the restricted member 100003 and returns `member_restricted` with exit 10, so the
-signal is now verified in the evidence a reviewer reads, not only inside the test suite.
+signal is now verified in the evidence a reviewer reads, not only inside the test suite. Run
+`08-replay-validation-rejected` does the same for `validation_rejected` in the sub-account
+capability, after the fixes in 0045.
 
 That confirms the lookup capability only. The same lesson was not applied to
 `open-member-subaccount-1.0.0.json`, which was hand-authored later with three outcomes of its
-own and no test for any of them. None of the three can fire. See 0045.
+own and no test for any of them. None of the three could fire. See 0045, where all three are
+now fixed and tested.
 
 ## 0028. navigate steps store a path, not a URL
 
@@ -1427,9 +1430,9 @@ Known weakness: the invoke line assumes the repository layout, `.venv/bin/python
 because that is how every README command runs. An agent in a different environment has to adapt
 it, and nothing checks the placeholders it fills in against the declared types before the run.
 
-## 0045. two defects stop the sub-account capability's outcomes from ever firing
+## 0045. three defects stopped the sub-account capability's outcomes from ever firing
 
-Final gap closure. Found while producing curated run 08, and recorded rather than fixed.
+Final gap closure. Found while producing curated run 08, recorded first, then fixed.
 
 The sub-account capability declares `member_not_found`, `member_restricted` and
 `validation_rejected`. All three were written by hand and none was ever replayed. Producing run 08
@@ -1453,19 +1456,24 @@ fingerprint check in 0034 loads the entry screen, gets an "Access Restricted" or
 instead of the recorded one, and stops with `surface_unavailable` before step 0. The two member
 outcomes in this capability check after step 0, so they can never be reached.
 
-Not fixed, because this round was limited to evidence and documentation, with no new
-behaviour. The fixes, for whoever takes this on:
+**Fixed, in this order, each with a test that fails on the old code:**
 
-1. On a wait timeout, check the step's declared outcomes before classifying the timeout. That
-   keeps 0023's promise that an answer is never reported as a crash.
-2. Publish the capability as 1.1.0 with a detect signal that matches the real messages, for
-   instance a `text_present` pattern over the field error texts, and a test that replays it.
-3. Have the fingerprint check evaluate declared outcomes on the entry screen before calling a
-   mismatch drift, or skip the title comparison when an outcome signal already matches.
+1. When a step's wait runs out, the engine checks that step's declared outcomes before retrying or
+   reporting a timeout. The run log records it as `wait_timed_out_on_outcome`. This keeps 0023's
+   promise that an answer is never reported as a crash for steps that wait on text.
+2. The fingerprint check no longer calls a mismatch drift when the entry page matches an outcome
+   the run can report at step 0. A title change with no matching outcome still stops the run, and
+   a test checks that.
+3. The capability is published as 1.1.0, detecting the app's real field errors with a pattern.
+   1.0.0 is unchanged, because sample run 06 was replayed against it. A test checks the pattern
+   against every message in the app's own error table.
 
-Rejected: fix the signal alone and record run 08 as a success. It would still time out, and it
-would hide the more important defect, which is in the engine rather than in one artifact.
+Run 08 was then regenerated against 1.1.0 and returns `validation_rejected` with exit 10. The
+first attempt, a `timeout` with exit 40, is what exposed all of this.
 
-Known weakness of recording it this way: the curated set now contains a run whose directory name
-describes the scenario while its result is a failure. `evidence/README.md` says so in the table
-and explains it underneath.
+Rejected: fix the detect signal alone. It would still have timed out, and the more important
+defect was in the engine rather than in one artifact.
+
+Known weakness: an outcome is only recognised at the step it declares. A rejected form that
+appeared at a step whose outcomes do not list it would still come back as a timeout, which is the
+right answer for an undeclared screen but will look similar in a log.

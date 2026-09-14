@@ -66,10 +66,10 @@ checkpoint too, so asking the postcondition first turns every not-found lookup i
 paged human, to deliver an answer the system already had. The brief names conflating the two as the
 most common mistake in this problem. They are checked after every step rather than at the end,
 because a flow can end early: the not-found screen appears at step 3 of 4 and step 4 would click a
-control that no longer exists. The ordering has one known hole, found while producing run 08: a
-step whose wait runs out returns a `timeout` before outcomes are ever checked, so a form the server
-rejects in the sub-account capability is reported as a failure, exit 40, instead of
-`validation_rejected`, exit 10 (0045). Five results carry distinct exit codes, `Success` 0,
+control that no longer exists. Producing run 08 found a hole in that ordering: a step whose wait
+ran out returned a `timeout` before outcomes were checked, so a form the server rejected came back
+as a failure, exit 40. A wait that runs out now checks the step's declared outcomes first, and the
+run returns `validation_rejected` with exit 10 (0045). Five results carry distinct exit codes, `Success` 0,
 `BusinessOutcome` 10, `NeedsHuman` 20, `PolicyBlocked` 30 and `Failure` 40, spaced by ten so a
 caller branches on the decade without parsing JSON, and a recoverable condition never becomes a
 result kind but appears as `recoveries_applied` on a success.
@@ -276,8 +276,7 @@ any irreversible step has run. It was cut for time. Each is a
 cut rather than an omission because the brief is explicit that a thin but real version of every
 requirement beats a polished subset, and each bought time for a requirement that is thin but real.
 
-Next, in order. First, fix the replay defect in 0045, so a wait that runs out checks declared
-outcomes before it reports a timeout. Then the draft to approved promotion path, since every capability is `draft` and
+Next, in order. First, the draft to approved promotion path, since every capability is `draft` and
 every replay uses `--allow-draft`, so the gate is a speed bump rather than a control, and promotion
 also closes the sharpest schema hole, a parameter declared with the wrong type passing every
 validator and surfacing on the first real replay (0026, 0014). Then checkpoint discrimination,
