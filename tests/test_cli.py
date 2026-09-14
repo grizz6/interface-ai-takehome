@@ -250,3 +250,28 @@ def test_a_redacted_value_never_appears_in_a_step_description(
     for description in descriptions:
         assert SECRET not in description, f"a redacted value reached: {description!r}"
 
+
+
+def test_record_will_not_silently_replace_a_different_capability(tmp_path: Path) -> None:
+    """Recompiling the same run is fine; overwriting a reviewed artifact needs --overwrite."""
+    transcript = "evidence/curated/01-discovery-real/transcript.json"
+    out = tmp_path / "caps"
+
+    first = run_cli("record", "--transcript", transcript, "--out", str(out))
+    assert_exit(first, 0, "the first compile writes the file")
+    path = next(out.glob("*.json"))
+    original = path.read_text()
+
+    again = run_cli("record", "--transcript", transcript, "--out", str(out))
+    assert_exit(again, 0, "an identical recompile is allowed")
+    assert "unchanged" in again.stdout
+
+    path.write_text(original.replace('"status": "draft"', '"status": "approved"'))
+    refused = run_cli("record", "--transcript", transcript, "--out", str(out))
+    assert_exit(refused, 1, "a different file already there is not replaced")
+    assert "refusing to replace" in refused.stderr
+    assert '"approved"' in path.read_text()
+
+    forced = run_cli("record", "--transcript", transcript, "--out", str(out), "--overwrite")
+    assert_exit(forced, 0, "--overwrite replaces it")
+    assert path.read_text() == original

@@ -150,11 +150,11 @@ that ships in the repository:
   --out capabilities/
 ```
 
-That rewrites `capabilities/lookup-member-savings-balance-1.0.0.json` byte for byte identical to
-the committed file, which is itself a check that compilation is deterministic: `git status` stays
-clean. `--out capabilities/` overwrites any capability with the same id and version, so compiling
-a different run, a dry run included, replaces the committed artifact's provenance with that run's.
-Point `--out` somewhere else for anything but this transcript.
+It prints `capabilities/lookup-member-savings-balance-1.0.0.json (unchanged: identical to the file
+already there)`: the recompile matches the committed artifact byte for byte, which is itself a check
+that compilation is deterministic. Compiling a different run, a dry run included, to the same id and
+version is refused with exit 1 rather than replacing the reviewed file. Point `--out` somewhere else,
+or pass `--overwrite` if replacing it is really what you want.
 
 Compiled capabilities come out `status: draft`. A draft has been recorded once and replayed
 never, so replaying one unattended is refused; see step 4.

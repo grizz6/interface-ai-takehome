@@ -94,6 +94,10 @@ def build_parser() -> argparse.ArgumentParser:
     record.add_argument("--transcript", required=True, help="Path to a transcript.json.")
     record.add_argument("--out", default="capabilities", help="Directory to write into.")
     record.add_argument("--policy", default=str(DEFAULT_POLICY_PATH))
+    record.add_argument(
+        "--overwrite", action="store_true",
+        help="Replace an existing capability file with the same id and version.",
+    )
 
     play = sub.add_parser("replay", help="Replay a saved capability, with no model involved.")
     play.add_argument("--capability", required=True, help="Path to a capability JSON file.")
@@ -148,8 +152,13 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _save_capability(outcome: CompileOutcome, out_dir: Path) -> int:
-    """Print the compile report, write the artifact, return the exit code."""
+def _save_capability(outcome: CompileOutcome, out_dir: Path, *, overwrite: bool = False) -> int:
+    """Print the compile report, write the artifact, return the exit code.
+
+    A capability file is a reviewed artifact, and its name is its id and version, so a different
+    run compiled to the same name would silently replace the reviewed one. Writing identical
+    bytes is allowed, since that is a reproduction; writing different ones needs --overwrite.
+    """
     for line in outcome.report.lines():
         print(f"  {line}")
     if outcome.error is not None or outcome.capability is None:
@@ -159,7 +168,18 @@ def _save_capability(outcome: CompileOutcome, out_dir: Path) -> int:
     capability = outcome.capability
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{capability.capability_id}-{capability.version}.json"
-    path.write_text(capability.model_dump_json(indent=2) + "\n")
+    content = capability.model_dump_json(indent=2) + "\n"
+    if path.exists() and not overwrite:
+        if path.read_text() == content:
+            print(f"{path} (unchanged: identical to the file already there)")
+            return EXIT_CODES["success"]
+        print(
+            f"refusing to replace {path}: it already exists and holds a different capability. "
+            "Bump the version, write somewhere else with --out, or pass --overwrite.",
+            file=sys.stderr,
+        )
+        return 1
+    path.write_text(content)
     print(path)
     return EXIT_CODES["success"]
 
@@ -174,7 +194,9 @@ def cmd_record(args: argparse.Namespace) -> int:
     transcript = DiscoveryTranscript.model_validate_json(
         Path(args.transcript).read_text()
     )
-    return _save_capability(compile_capability(transcript, policy), Path(args.out))
+    return _save_capability(
+        compile_capability(transcript, policy), Path(args.out), overwrite=args.overwrite
+    )
 
 
 def _descriptor(target: str) -> SurfaceDescriptor:
