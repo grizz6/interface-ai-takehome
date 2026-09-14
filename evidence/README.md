@@ -13,7 +13,7 @@ Nine runs, in reading order. `INDEX.md` in that folder is the same table, genera
 
 | run | brief | exit | result | what it shows |
 | --- | --- | --- | --- | --- |
-| `01-discovery-real` | 3.1, 3.2 | 0 | success | The model drove the real UI with no API and no hardcoded selectors. Its transcript is what the recorder compiled into a capability |
+| `01-discovery-real` | 3.1, 3.2 | 0 | success | The model drove the real UI with no API and no hardcoded selectors. The capability compiled from its transcript is saved in the same folder |
 | `02-replay-success` | 3.3 | 0 | success | The capability replays with no model and returns the declared output |
 | `03-replay-business-outcome` | 3.3 | 10 | business_outcome | A member that does not exist comes back as an answer, not a crash. Deliverable 3 asks for this run by name |
 | `04-replay-recovered` | 3.3 | 0 | success | An unexpected maintenance page is dismissed. It shows up in `recoveries_applied` on a success, not as a result of its own |
@@ -38,6 +38,11 @@ one capability shows exit codes 0, 10 and 40.
 | slow or failed load | `05` | A failed load stops with `app_error`, exit 40. There is no sample run for a slow load; `tests/test_replay.py` turns on the six second delay and checks the run still succeeds |
 
 ### 01-discovery-real is kept exactly as recorded
+
+The folder also holds `lookup-member-savings-balance-1.0.0.json`, the capability compiled from
+this run's transcript by `record`. It is byte for byte the same as the copy in `capabilities/`.
+The replay runs use version 1.2.0, which has the same steps, outputs and success check, plus
+the outcomes and recovery added by hand (see `DECISIONS.md` 0027).
 
 It has **no `meta.json`**, which is why `INDEX.md` shows its kind as `unknown`. It was recorded
 on 2026-09-12 with `gemini-3.6-flash`, before the evidence writer started adding that file. I
@@ -199,7 +204,7 @@ nobody mistakes the folder name for the verdict. See `DECISIONS.md` 0036.
 | brief section | where to look |
 | --- | --- |
 | 3.1 goal-driven agent loop | `curated/01-discovery-real/transcript.json` and its `screenshots/` |
-| 3.2 structured artifact | `curated/01-discovery-real/transcript.json` and `capabilities/lookup-member-savings-balance-1.0.0.json`, which compiles from it byte for byte |
+| 3.2 structured artifact | `curated/01-discovery-real/lookup-member-savings-balance-1.0.0.json`, compiled from the `transcript.json` next to it |
 | 3.3 replay and runtime conditions | runs 02 to 05 and 07 to 09, and the conditions table above. `tests/test_replay_isolation.py` checks that replay never loads a model |
 | 3.4 safety and policy | `curated/06-escalation-handoff/run.jsonl`, where the policy stops the Confirm click for approval; `params_redacted` in every `meta.json`; `tests/test_secret_guard.py`, which scans every file of a finished run |
 | 3.5 evidence, and more than a log on failure | `curated/05-replay-hard-failure/failure/`, all four files. Runs 03, 07 and 08 have the same files for a business outcome |
@@ -220,6 +225,15 @@ command that made it. Running it again gives a different run.
 .venv/bin/python -m src.cli discover \
   --goal "look up member 100001 and read their current savings balance" \
   --target http://localhost:8080 --record
+```
+
+The capability saved in that folder comes from compiling the committed transcript, which needs
+no key:
+
+```bash
+.venv/bin/python -m src.cli record \
+  --transcript evidence/curated/01-discovery-real/transcript.json \
+  --out evidence/curated/01-discovery-real/
 ```
 
 **02-replay-success.** Exit 0.
