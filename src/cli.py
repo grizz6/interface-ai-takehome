@@ -1,13 +1,8 @@
 """Command line entry points.
 
-.env IS LOADED HERE AND NOWHERE ELSE. This is the single place in the repo that knows a .env
-file can exist. `load_dotenv` moves its contents into the process environment and returns
-nothing to us, so no value is ever held, logged or written by anything we wrote; the Gemini
-SDK then reads GEMINI_API_KEY from the environment itself.
-
-Note for whoever reads the design rules alongside this: invariant 6 says .env is never read. The one
-call below is the exception that instruction implies, and the invariant needs a carve out
-saying so. It is flagged rather than quietly assumed.
+.env is loaded here and nowhere else. `load_dotenv` copies it into the process environment and
+returns nothing, so our code never holds, logs or writes a value from it. The Gemini SDK then
+reads GEMINI_API_KEY from the environment itself.
 """
 from __future__ import annotations
 
@@ -43,8 +38,8 @@ from src.escalation.session import DEFAULT_DEADLINE_SECONDS, Session
 from src.replay.engine import replay
 from src.surface.web import WebSurface
 
-# gemini-3-flash-preview caps the free tier at 20 requests, which a 25 step run
-# exhausts before it finishes. This one has the headroom to complete a run.
+# gemini-3-flash-preview allows only 20 free requests, which a 25 step run can use up before
+# it finishes. This model has enough room.
 DEFAULT_MODEL = "gemini-3.6-flash"
 
 
@@ -153,11 +148,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _save_capability(outcome: CompileOutcome, out_dir: Path, *, overwrite: bool = False) -> int:
-    """Print the compile report, write the artifact, return the exit code.
+    """Print the compile report, save the capability, and return the exit code.
 
-    A capability file is a reviewed artifact, and its name is its id and version, so a different
-    run compiled to the same name would silently replace the reviewed one. Writing identical
-    bytes is allowed, since that is a reproduction; writing different ones needs --overwrite.
+    The file name is the id and version, so compiling a different run to the same name would
+    quietly replace a file someone reviewed. Writing the exact same content is fine; different
+    content needs --overwrite.
     """
     for line in outcome.report.lines():
         print(f"  {line}")
@@ -248,8 +243,8 @@ def cmd_discover(args: argparse.Namespace) -> int:
                 writer.screenshot(obs.screenshot_png) if obs.screenshot_png else None
             ),
         )
-        # Written before the surface closes, because a post mortem of a page that is already
-        # gone is three empty files. Same function replay uses, so the directories match.
+        # Written before the browser closes, or there would be no page left to capture. Replay
+        # uses the same function, so the folders match.
         write_failure_artifacts(surface, writer, outcome.result)
     finally:
         surface.close()
@@ -260,8 +255,8 @@ def cmd_discover(args: argparse.Namespace) -> int:
     print(writer.directory)
 
     if args.record and outcome.result.kind == "success":
-        # Compiling is a separate concern from running, so a compile failure is reported and
-        # does not rewrite the run's own result: the discovery run did succeed.
+        # A compile failure is reported but does not change the run's result, because the
+        # discovery run itself did succeed.
         print("compiling the transcript into a capability:")
         _save_capability(compile_capability(outcome.transcript, policy), Path("capabilities"))
 
@@ -295,8 +290,8 @@ def cmd_replay(args: argparse.Namespace) -> int:
         ),
     )
     surface = WebSurface(policy, PolicyGate(policy), headless=not args.headed)
-    # A lease path is what turns a stopping condition into a handoff. Without one the surface
-    # keeps its own in-process lease, so invariant 10 still holds and nothing waits.
+    # With a lease path, a stuck run hands over to a person. Without one the surface keeps its
+    # own in-process lease and nothing waits.
     session = Session(
         surface,
         session_id=writer.run_id,
@@ -328,7 +323,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
 
 
 def cmd_operator(args: argparse.Namespace) -> int:
-    """Serve the console. Blocks until interrupted; there is no result to return."""
+    """Serve the operator page. Runs until interrupted."""
     lease_path = args.lease_path or str(Path(args.interventions_dir) / "lease.json")
     print(f"operator console on http://127.0.0.1:{args.port}")
     print(f"  interventions: {args.interventions_dir}")
@@ -338,7 +333,7 @@ def cmd_operator(args: argparse.Namespace) -> int:
 
 
 def cmd_catalog(args: argparse.Namespace) -> int:
-    """Read-only. Exits 1 on an unknown id or an invalid artifact: no run exists to classify."""
+    """Read-only. Exits 1 for an unknown id or a broken capability file, since no run happened."""
     try:
         entries = catalog.load(args.dir)
         if args.catalog_command == "list":
@@ -356,7 +351,7 @@ def cmd_catalog(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    # The one and only place .env is touched.
+    # The only place .env is loaded.
     load_dotenv()
     args = build_parser().parse_args(argv)
     if args.command == "discover":

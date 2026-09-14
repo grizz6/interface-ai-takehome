@@ -1,18 +1,15 @@
-"""The capability catalog: what an agent can call, and the typed contract for calling it.
+"""The capability catalog: what an agent can run, and what each capability takes and returns.
 
-The brief's first stretch goal. A calling agent should not have to open JSON files and read the
-schema to learn what a capability takes and returns, so the catalog reads `capabilities/` and
-answers two questions: what exists, and what exactly does this one accept, return, and refuse.
+This is the first stretch goal in the brief. An agent should not need to open JSON files to find
+out what a capability does, so the catalog reads `capabilities/` and answers two questions: what
+is there, and what does this one accept, return and refuse.
 
-Deliberately a module and two CLI commands, not a service. Section 8 rules out servers and
-plugin systems, and the contract a service would expose is already the artifact schema; this
-only reads it. Invocation is the existing `replay` command, and `describe` prints the exact line
-to run, so an agent goes list, describe, invoke without learning anything the artifact does not
-already say.
+It is a module and two CLI commands, not a server. Running a capability still goes through
+`replay`, and `describe` prints the exact command, so an agent can go list, describe, run.
 
-Every artifact is validated through the Capability model on load. A file that no longer
-validates is an error naming the file, never silently dropped: an agent told a capability does
-not exist when it is merely broken would route around a fault nobody knows about.
+Every file is validated through the Capability model when loaded. A file that fails is an error
+naming the file, never skipped, because an agent told a capability does not exist when it is
+really broken will work around a problem nobody knows about.
 """
 from __future__ import annotations
 
@@ -43,7 +40,7 @@ class Entry:
 
 
 def _version_key(version: str) -> tuple[int, ...]:
-    """Semantic ordering. Lexical ordering would rank 1.10.0 below 1.2.0."""
+    """Sort versions as numbers, so 1.10.0 comes after 1.2.0."""
     return tuple(int(part) for part in version.split("."))
 
 
@@ -92,10 +89,10 @@ def summary(entry: Entry) -> dict[str, Any]:
 
 
 def _invocation(entry: Entry) -> str:
-    """The exact command that invokes this capability, with a placeholder per input.
+    """The command that runs this capability, with a placeholder for each input.
 
-    An example value is used where the artifact carries one. A pii or secret input cannot carry
-    an example, by schema, so it gets a typed placeholder instead of a value.
+    Uses an input's example value if it has one. pii and secret inputs are not allowed examples,
+    so they get a placeholder like <string>.
     """
     cap = entry.capability
     params = {p.name: p.example if p.example is not None else f"<{p.type.value}>" for p in cap.inputs}
@@ -107,7 +104,7 @@ def _invocation(entry: Entry) -> str:
 
 
 def contract(entry: Entry) -> dict[str, Any]:
-    """The full typed contract `catalog describe` prints."""
+    """Everything `catalog describe` prints about one capability."""
     cap = entry.capability
     return {
         "capability_id": cap.capability_id,
