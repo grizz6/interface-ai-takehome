@@ -227,6 +227,19 @@ def _matching_outcome(
     return None
 
 
+def _outcome_result(run: _Run, outcome: BusinessOutcomeSpec, index: int) -> RunResult:
+    run.note("business_outcome", code=outcome.code, step_index=index)
+    _capture_outcome(run)
+    return BusinessOutcomeResult(
+        code=outcome.code,
+        message=outcome.description,
+        detected_at_step=index,
+        partial_outputs=_extract(run, only=outcome.partial_outputs)[0],
+        steps=run.traces,
+        evidence=run.evidence,
+    )
+
+
 def _apply_recoveries(run: _Run, index: int) -> str | None:
     """Fire any recovery whose detect signal matches, bounded by max_attempts.
 
@@ -445,6 +458,25 @@ def _attempt_step(run: _Run, step: Step) -> RunResult | None | _Escalation:
                 evidence=run.evidence,
             )
         except ActionTimeout as exc:
+            # A wait that runs out is often waiting for a screen the application replaced with
+            # an answer: a rejected form never shows the review page. Ask whether a declared
+            # outcome is on screen before retrying or failing, or 0023's promise that an answer
+            # is never reported as a crash does not hold for any step that waits on text.
+            outcome = _matching_outcome(run, index)
+            if outcome is not None:
+                run.traces.append(
+                    StepTrace(
+                        index=index,
+                        action=step.action,
+                        description=step.description,
+                        locator_strategy_used=strategy,
+                        attempt_count=attempts,
+                        duration_ms=int((time.monotonic() - started) * 1000),
+                        recovered_by=None,
+                    )
+                )
+                run.note("wait_timed_out_on_outcome", step_index=index, code=outcome.code)
+                return _outcome_result(run, outcome, index)
             if attempts > budget:
                 _capture_failure(run, index)
                 if step.risk is RiskClass.RISKY_IRREVERSIBLE:
@@ -517,16 +549,7 @@ def _attempt_step(run: _Run, step: Step) -> RunResult | None | _Escalation:
     # postcondition too, and asking that question first turns an answer into a crash.
     outcome = _matching_outcome(run, index)
     if outcome is not None:
-        run.note("business_outcome", code=outcome.code, step_index=index)
-        _capture_outcome(run)
-        return BusinessOutcomeResult(
-            code=outcome.code,
-            message=outcome.description,
-            detected_at_step=index,
-            partial_outputs=_extract(run, only=outcome.partial_outputs)[0],
-            steps=run.traces,
-            evidence=run.evidence,
-        )
+        return _outcome_result(run, outcome, index)
 
     # (g) and only now, did this step do what it said
     if step.postcondition is not None and not run.surface.evaluate(step.postcondition.signal):
