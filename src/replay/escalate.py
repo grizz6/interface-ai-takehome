@@ -1,9 +1,8 @@
-"""What automation does when it gets the session back.
+"""What the run does when it gets the browser back from a person.
 
-Split out of engine.py because it is the part worth reading on its own. The rule underneath
-all of it is one sentence: trust the page, not the report. An operator saying "I did it" is a
-claim about a screen, and the screen is right there, so the claim is checked rather than
-believed. See DECISIONS.md 0031.
+Kept apart from engine.py so it can be read on its own. The rule is: trust the page, not what
+you were told. An operator saying "I did it" is a claim about the screen, and the screen is
+right there, so check it. See DECISIONS.md 0031.
 """
 from __future__ import annotations
 
@@ -24,11 +23,11 @@ class ResumeAction(StrEnum):
 
 
 def verify_after_return(surface: Any, capability: Capability, step: Step) -> bool:
-    """Re-observe and ask whether the step's checkpoint holds now.
+    """Look at the page again and check whether the step's check passes now.
 
-    The step's own postcondition if it declares one, the capability checkpoint otherwise. A
-    step with neither has nothing to verify against, and that returns False rather than True:
-    absence of a check is not evidence that a thing happened.
+    Uses the step's postcondition if it has one, otherwise the capability checkpoint. With
+    neither there is nothing to check, so this returns False: no check is not proof that
+    something happened.
     """
     signal = step.postcondition.signal if step.postcondition else capability.checkpoint.signal
     if signal is None:
@@ -45,12 +44,11 @@ def decide_resume(
     traces: list[StepTrace],
     evidence: EvidenceRef,
 ) -> ResumeAction | FailureResult | NeedsHumanResult:
-    """Turn the operator's answer plus the state of the page into one next move."""
+    """Combine the operator's answer and the state of the page into the next move."""
     outcome = resolution.outcome
 
-    # The safety rule runs here as well as in the console, because a resolution file can be
-    # written by hand, by a script, or by a future second console. The UI hiding an option is
-    # a courtesy; this is the enforcement.
+    # Checked here as well as in the operator page, because a resolution file can also be
+    # written by hand or by a script. Hiding the button is a convenience; this is the check.
     refusal = refuse_unsafe_outcome(step.risk, outcome)
     if refusal is not None:
         return FailureResult(
@@ -95,8 +93,7 @@ def decide_resume(
             )
         return ResumeAction.SKIP
 
-    # approved and retry_step both mean automation drives the step. They differ only in what
-    # produced the intervention, which the engine has already recorded.
+    # approved and retry_step both mean the run performs the step itself.
     return ResumeAction.PERFORM
 
 

@@ -1,21 +1,16 @@
 """Compile a DiscoveryTranscript into a Capability.
 
-A transcript is a record of what happened, dead ends included. A capability is the path that
-worked, parameterized so it can be run again with different values. Compiling is the step
-where a conversation becomes an artifact, and almost all of the judgment is in what gets
-dropped and what gets turned into a parameter.
+A transcript is everything that happened, dead ends included. A capability is the path that
+worked, with parameters so it can run again with different values. Most of the work is
+deciding what to drop and what to turn into a parameter.
 
-Two rules shape everything here.
+Locator bundles are copied as they are. They were checked against the live page at the moment
+of the action, which is the only time they were known to be right. Rebuilding them now would
+mean building them against a page that has moved on. See DECISIONS.md 0019.
 
-LOCATOR BUNDLES ARE CARRIED THROUGH UNCHANGED. They were built against the live observation
-at the instant of the action, verified against the page at that instant, and that is the only
-moment they were known to be true. Re-deriving them later would be re-deriving them against a
-page that has moved on. See DECISIONS.md 0019.
-
-VALIDATION IS NOT SOFTENED. The Capability is constructed through the Pydantic model so every
-cross field validator from phase 2 runs, and a ValidationError propagates untouched. A
-transcript that cannot produce a valid artifact is a compile failure worth seeing, and those
-validators are the whole point of having a schema.
+Validation is not loosened. The Capability is built through the Pydantic model so every
+validator runs, and a ValidationError is passed straight up. If a transcript cannot make a
+valid capability, that failure should be seen.
 """
 from __future__ import annotations
 
@@ -41,7 +36,7 @@ from src.models.policy import PolicyConfig
 
 DEFAULT_WAIT_MS = 10_000
 SLOW_STEP_MULTIPLE = 3
-"""A step this many times the median duration gets its own widened timeout, not all of them."""
+"""A step this many times slower than the median gets a longer timeout. Other steps do not."""
 
 TEMPLATE_SAFE = re.compile(r"^[A-Za-z0-9_.\-]+$")
 
@@ -71,9 +66,9 @@ class CompileError:
 class CompileReport:
     """What the compiler kept, dropped and bound. Never contains a recorded value.
 
-    Unbound literals are named by the control they were typed into rather than by their
-    content, because a literal the model failed to parameterize is exactly the kind of value
-    most likely to be a member id.
+    Values that were not turned into parameters are described by the field they were typed
+    into, not by what they were, because a value the model forgot to declare is quite likely
+    a member id.
     """
 
     raw_actions: int = 0
@@ -100,10 +95,9 @@ class CompileReport:
 class CompileOutcome:
     """The result of compiling.
 
-    The brief specified `compile(transcript, policy) -> Capability | CompileError`. The CLI
-    also has to print a compile report, and a two way union has nowhere to carry one, so the
-    return is this small wrapper instead. `capability` and `error` are still mutually
-    exclusive, which is the part of the contract that matters.
+    The plan was `compile(transcript, policy) -> Capability | CompileError`, but the CLI also
+    prints a compile report and a plain union has nowhere to put it. So this wraps both.
+    Only one of `capability` and `error` is ever set.
     """
 
     report: CompileReport
@@ -124,10 +118,8 @@ def _select_steps(
 ) -> list[ActionRecord]:
     """Keep the actions that made progress, in order.
 
-    look() never produces an ActionRecord and neither does a blocked action, since the loop
-    returns before recording one. They are filtered anyway, because a selection rule that
-    depends on an upstream component never emitting a thing is a rule that breaks quietly
-    when that component changes.
+    look() and blocked actions never create an ActionRecord today, but they are filtered here
+    anyway, so this does not quietly break if the loop changes.
     """
     ordered = transcript.actions_in_order()
     kept: list[ActionRecord] = []
@@ -148,7 +140,7 @@ def _select_steps(
 
 
 def _changed_nothing_then_retried(ordered: list[ActionRecord], index: int) -> bool:
-    """An action that moved nothing and was immediately tried again is a false start."""
+    """An action that changed nothing and was tried again straight away was a false start."""
     action = ordered[index]
     if action.obs_hash_before is None or action.obs_hash_after is None:
         return False
@@ -166,20 +158,19 @@ def _changed_nothing_then_retried(ordered: list[ActionRecord], index: int) -> bo
 def _bind_parameters(
     inputs: list[ParamSpec], actions: list[ActionRecord], goal: str, report: CompileReport
 ) -> dict[str, str] | CompileError:
-    """Work out which recorded literal each declared input stands for.
+    """Work out which typed value each declared input stands for.
 
-    The model types a value; it never says which parameter that value came from. So the
-    mapping is reconstructed, and the order of evidence matters.
+    The model types values but never says which parameter each one came from, so this has to
+    work it out.
 
-    An example on the ParamSpec is explicit and wins. After that the goal text is the best
-    signal there is: a value the caller supplied is a value that appeared in the goal, which
-    is precisely what makes it a parameter rather than a constant of the flow. A literal that
-    appears nowhere in the goal is more likely something the model chose, such as a nickname
-    it invented, and those are left as literals and reported.
+    An example on the ParamSpec wins. After that, the goal text is the best clue: a value that
+    appears in the goal came from the caller, which makes it a parameter and not a fixed part of
+    the flow. A value that is not in the goal is more likely something the model made up, like
+    a nickname, so it stays a fixed value and is reported.
 
-    Where that still leaves a choice between two inputs, this refuses rather than guesses.
-    Binding the wrong value silently hardwires a capability to the run it was recorded from,
-    and that failure surfaces much later as a replay against the wrong record.
+    If that still leaves a choice between two inputs, this refuses instead of guessing. A wrong
+    guess hardwires the capability to the recorded run, and that shows up much later as a
+    replay against the wrong record.
     """
     typed = [a.literal_value for a in actions if a.literal_value]
     distinct = list(dict.fromkeys(typed))
@@ -232,12 +223,10 @@ def _bind_parameters(
 
 
 def _placeholder(text: str, bound: dict[str, str]) -> str:
-    """Replace a bound value with its <param:name> placeholder wherever it appears in prose.
+    """Replace a bound value with its <param:name> placeholder wherever it appears in text.
 
-    Invariant 6 prescribes exactly this substitution. Two fields carry free text through into
-    the artifact and both can hold a recorded value: a step description, and the goal the run
-    was given. A member id in either is a pii value written to disk, and the fact that it also
-    sits in a step's ParamBinding does not make the prose copy harmless.
+    Two free-text fields end up in the capability and both can contain a recorded value: step
+    descriptions and the goal. A member id in either would be pii written to disk.
     """
     for name, value in bound.items():
         if value:
@@ -262,13 +251,12 @@ def _templated(text: str, bound: dict[str, str]) -> str:
 
 
 def _relative_to_surface(url: str, base_url: str) -> str:
-    """Strip the recorded host, leaving the path the step actually means.
+    """Strip the recorded host and keep the path.
 
-    A navigate step that carries "http://localhost:8080/" pins the artifact to the machine
-    it was recorded on. The same application at a different host, port or tenant subdomain
-    is the case the brief calls heterogeneity, and an absolute URL makes it unreachable
-    without editing the artifact. The host belongs to the surface descriptor, which a
-    caller can repoint; the step keeps only the part that is about the flow.
+    A navigate step holding "http://localhost:8080/" would only work on the machine it was
+    recorded on. The same app on another host, port or tenant subdomain is exactly what
+    capabilities need to handle. The host belongs in the surface descriptor, which can be
+    changed, and the step keeps only the path. See DECISIONS.md 0028.
     """
     base = base_url.rstrip("/")
     if base and url.startswith(base):
@@ -277,7 +265,7 @@ def _relative_to_surface(url: str, base_url: str) -> str:
 
 
 def _wait_for(action: ActionRecord, median_ms: int) -> WaitSpec:
-    """A load wait, widened only for the step that actually needed longer."""
+    """A load wait, with a longer timeout only for a step that was slow when recorded."""
     timeout = DEFAULT_WAIT_MS
     if median_ms and action.duration_ms > max(median_ms * SLOW_STEP_MULTIPLE, 250):
         timeout = max(DEFAULT_WAIT_MS, action.duration_ms * SLOW_STEP_MULTIPLE)
@@ -294,12 +282,11 @@ def _risk_of(action: ActionRecord, policy: PolicyConfig) -> RiskClass:
 def _postcondition_for(
     action: ActionRecord, transcript: DiscoveryTranscript
 ) -> Assertion | CompileError:
-    """Derive proof that an irreversible action did what it claimed.
+    """Build a check that an irreversible action did what it should.
 
-    The transcript keeps observation URLs but not page text, so the only assertion derivable
-    after the fact is where the action landed. If it landed nowhere new there is nothing to
-    prove and the compile fails, which is the right outcome: the schema requires an
-    irreversible step to prove itself, and inventing a postcondition would defeat that.
+    The transcript keeps URLs but not page text, so the only check possible afterwards is
+    where the action landed. If it landed nowhere new there is nothing to check, and compiling
+    fails. That is correct: making up a postcondition would defeat the point of requiring one.
     """
     urls = _observation_urls(transcript)
     landed = urls[-1] if urls else None
@@ -329,7 +316,7 @@ def compile_capability(
     """Turn a verified discovery run into a reusable capability."""
     report = CompileReport(raw_actions=len(transcript.actions))
 
-    # 1. preconditions
+    # only a verified finish can be compiled
     if transcript.stop_reason is not DiscoveryStop.GOAL_REACHED:
         return CompileOutcome(
             report,
@@ -349,7 +336,7 @@ def compile_capability(
             ),
         )
 
-    # 2. step selection
+    # pick the steps to keep
     kept = _select_steps(transcript, report)
     report.kept = len(kept)
     if not kept:
@@ -361,7 +348,7 @@ def compile_capability(
             ),
         )
 
-    # 4. parameterization
+    # match typed values to declared inputs
     bound = _bind_parameters(list(declared.inputs), kept, transcript.goal, report)
     if isinstance(bound, CompileError):
         return CompileOutcome(report, error=bound)
@@ -403,7 +390,7 @@ def compile_capability(
                 index=index,
                 action=kind,
                 description=_placeholder(action.note or kind.value, bound),
-                # 3. carried through unchanged, never re-derived
+                # copied as recorded, never rebuilt
                 target=action.bundle,
                 url=url,
                 value=value,
@@ -413,7 +400,7 @@ def compile_capability(
             )
         )
 
-    # 7. outcomes stay empty, deliberately
+    # no outcomes: this run never saw one (DECISIONS.md 0021)
     report.notes.append(
         "known_outcomes is empty: this run never met a not-found or a permission denial, so "
         "declaring one would be fabrication. Add them from a later recording or by hand"
@@ -423,7 +410,7 @@ def compile_capability(
         update={"entry_path": _templated(transcript.surface.entry_path, bound)}
     )
 
-    # 9. constructed through the model, so every phase 2 validator runs
+    # built through the model, so every validator runs
     capability = Capability(
         capability_id=_slug(declared.capability_name),
         version="1.0.0",

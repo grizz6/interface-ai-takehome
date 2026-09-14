@@ -1,7 +1,7 @@
-"""Checks that run before a browser is touched, and one that runs the moment it is.
+"""Checks that run before the browser does anything, plus the fingerprint check right after.
 
-Everything here answers the same question: is this capability, with these parameters, safe to
-run unattended against this surface right now. A no is cheap here and expensive four steps in.
+They all ask whether this capability, with these parameters, is safe to run against this app
+right now. Finding out no here is cheap. Finding out four steps in is not.
 """
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ def check_parameters(
 def check_approval(
     capability: Capability, allow_draft: bool, evidence: EvidenceRef
 ) -> FailureResult | None:
-    """A draft has replayed zero times. Nothing that has replayed zero times runs alone."""
+    """Refuse a draft unless --allow-draft was passed. A draft has never been replayed."""
     if capability.status is ApprovalStatus.APPROVED or allow_draft:
         return None
     return _failure(
@@ -99,16 +99,14 @@ def check_fingerprint(
     capability: Capability, surface: Any, evidence: EvidenceRef,
     params: dict[str, Any] | None = None,
 ) -> FailureResult | None:
-    """Is this the application the capability was recorded against.
+    """Check this is the app the capability was recorded on.
 
-    Only the parts of the fingerprint that were actually recorded are checked. A recorder that
-    captured nothing gives nothing to compare, and inventing a comparison would be worse than
-    admitting the check is thin.
+    Only the parts of the fingerprint that were recorded are checked. If nothing was recorded
+    there is nothing to compare.
 
-    The entry screen has to be loaded before there is anything to compare. A fresh browser
-    context sits on about:blank with an empty title, so a check made before navigating fails
-    every capability whose fingerprint records anything at all, and passes only the ones that
-    record nothing. That is the shape of a detector that never fires. See DECISIONS.md 0034.
+    The first page has to load before comparing. A new browser sits on about:blank with an
+    empty title, so checking before navigating failed every capability with a fingerprint and
+    passed only the ones without. See DECISIONS.md 0034.
     """
     params = params or {}
     fingerprint = capability.surface.fingerprint
@@ -132,11 +130,10 @@ def check_fingerprint(
     if drift is None:
         return None
 
-    # A declared business outcome is not drift. A restricted or unknown member is sent to a
-    # different screen with a different title, and calling that "the application changed"
-    # stopped the run before step 0, where the outcome it had declared would have been reported.
-    # Only outcomes the run can report at step 0 count, so a mismatch that no step would
-    # classify still stops here. See DECISIONS.md 0045.
+    # A declared business outcome is not drift. A restricted or unknown member lands on a page
+    # with a different title, and treating that as "the app changed" stopped the run before
+    # step 0 could report the outcome. Only outcomes checked at step 0 count, so any other
+    # mismatch still stops the run here. See DECISIONS.md 0045.
     for outcome in capability.known_outcomes:
         if outcome.check_after_step in (None, 0) and surface.evaluate(outcome.detect):
             return None
