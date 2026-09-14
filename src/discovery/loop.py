@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.discovery.client import (
+    ModelUnavailable,
     Message,
     ModelClient,
     ModelMessage,
@@ -276,6 +277,19 @@ class DiscoveryRun:
         self._started = time.monotonic()
         try:
             self._drive()
+        except ModelUnavailable as exc:
+            self.transcript.stop_reason = DiscoveryStop.ERROR
+            self._event(EventKind.STOP, reason=DiscoveryStop.ERROR.value, detail=str(exc))
+            failure: RunResult = FailureResult(
+                error_class=FailureClass.INTERNAL,
+                step_index=len(self.transcript.actions),
+                action=ActionType.WAIT_FOR,
+                expected="a model that answers",
+                observed=str(exc),
+                steps=self._traces(),
+                evidence=self.evidence,
+            )
+            return DiscoveryOutcome(result=failure, transcript=self.transcript)
         except _Stop as stop:
             self.transcript.stop_reason = stop.reason
             self._event(EventKind.STOP, reason=stop.reason.value)

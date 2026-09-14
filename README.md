@@ -118,9 +118,11 @@ in use`. If you stopped it, start it again in its own terminal the same way.
 snapshot and sometimes a screenshot. If you would rather not, skip to the second command in step
 3, which needs no key, or use the dry run above, which exercises everything except the model.
 
-With `GEMINI_API_KEY` blank, as `.env.example` leaves it, this exits `1` with the SDK's
-`ValueError: No API key was provided` as a Python traceback. No request is sent. Exit 1 is outside
-the result contract below, because the run never started.
+With `GEMINI_API_KEY` blank, as `.env.example` leaves it, no request is sent and the run ends as
+an ordinary failure, exit `40`, with `observed` in `result.json` reading "the model client could not
+start: No API key was provided". The Gemini SDK may also print an `AttributeError` about
+`_async_httpx_client` while the process exits; that is the SDK cleaning up a client it never
+finished building, and it does not change the result.
 
 ```bash
 .venv/bin/python -m src.cli discover \
@@ -321,8 +323,8 @@ your machine.
 
 One code per result kind, spaced by ten so a caller can branch on the decade without parsing
 JSON and so a related code can be added later without renumbering. These cover every run that
-starts. A process that dies before a run exists, a missing API key for instance, exits `1` with a
-traceback instead.
+starts. A mistyped command never starts a run and exits `2` from the argument
+parser. A missing API key is not like that: it is a failure with exit 40.
 
 | Code | Result kind | Meaning |
 |---|---|---|

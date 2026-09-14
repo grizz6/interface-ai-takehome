@@ -1511,3 +1511,25 @@ Known weakness: the fault in the target app fires on the first page load, so run
 any real progress. A session that expires mid-flow takes the same code path and is covered only by
 reasoning and by the budget and irreversible tests, not by a curated run. The sub-account
 capability does not declare the rule.
+
+## 0047. a model that cannot be reached is a failure, not a crash
+
+Final gap closure.
+
+Discover with no API key used to end with the SDK's `ValueError` as a Python traceback and exit 1,
+which is outside the five result kinds and leaves no `result.json`. The same was true of any
+non-retryable API error, and of a provider that kept returning 429 or 5xx past the retry budget.
+
+`GeminiClient` now raises one typed `ModelUnavailable` for all three, and the discovery loop turns it
+into a `FailureResult` with exit 40, so the run leaves the same evidence as any other failure. The
+message is the SDK's local "No API key was provided" text, which is produced before any request and
+holds no value, or an HTTP status. The provider's response body is never copied into it, because we
+cannot vouch that it is free of anything sensitive.
+
+Rejected: check whether the key is set before building the client, which would also avoid the SDK's
+cleanup warning described in the README. Testing whether the variable is empty means reading its
+value, and invariant 6 says no code here does.
+
+Known weakness: the class is `internal`, the nearest existing failure class. A dedicated class for
+"the model is unavailable" would say it more precisely, but it is a schema change, and invariant 1
+says those are proposed rather than made.

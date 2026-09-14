@@ -254,6 +254,16 @@ def _status_code(exc: Exception) -> int | None:
     return None
 
 
+class ModelUnavailable(RuntimeError):
+    """The model could not be reached or refused the request, so discovery cannot continue.
+
+    Raised instead of letting a provider exception escape, so a missing key or a rejected request
+    ends the run as a typed failure with evidence rather than as a traceback with exit 1. The
+    message names what went wrong without repeating the provider's response, which is not ours
+    to vouch for as free of anything sensitive.
+    """
+
+
 class GeminiClient:
     """The real client. Constructed with a model string and nothing else."""
 
@@ -281,7 +291,12 @@ class GeminiClient:
 
             # No arguments on purpose. The SDK reads GEMINI_API_KEY from the environment
             # and the key never enters this process as a value we hold. Invariant 6.
-            self._client = genai.Client()
+            try:
+                self._client = genai.Client()
+            except ValueError as exc:
+                # Raised locally, before any request, when no key is set. The SDK's own
+                # wording says so and contains no value, so it is passed on.
+                raise ModelUnavailable(f"the model client could not start: {exc}") from exc
         return self._client
 
     def complete(
@@ -321,8 +336,12 @@ class GeminiClient:
                 # internal compat_errors tree, and both rate limits and 5xx arrive as the
                 # latter. An earlier version caught only the former, so the backoff below
                 # had never once run. Anything not transient is re-raised untouched.
-                if _status_code(exc) not in TRANSIENT_STATUSES:
-                    raise
+                status = _status_code(exc)
+                if status not in TRANSIENT_STATUSES:
+                    detail = f"HTTP {status}" if status else type(exc).__name__
+                    raise ModelUnavailable(
+                        f"the model API refused the request ({detail})"
+                    ) from exc
                 last = exc
                 if attempt == self._max_attempts - 1:
                     break
@@ -331,10 +350,10 @@ class GeminiClient:
             self._previous_id = getattr(interaction, "id", None)
             self._sent = len(messages)
             return to_model_turn(interaction)
-        raise RuntimeError(
-            f"Gemini returned a transient error {self._max_attempts} times in a row. The "
-            f"free tier ceiling and provider 5xx both land here, and a long run brushes "
-            f"both: {last}"
+        raise ModelUnavailable(
+            f"Gemini returned a transient error {self._max_attempts} times in a row "
+            f"(last: HTTP {_status_code(last) if last else 'unknown'}). The free tier ceiling "
+            "and provider 5xx both land here, and a long run brushes both."
         )
 
     def _retry_after(self, exc: Exception, attempt: int) -> float:

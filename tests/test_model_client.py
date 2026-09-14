@@ -172,3 +172,21 @@ def test_backoff_grows_and_is_jittered() -> None:
     assert 1.0 <= client._backoff_for(0) <= 2.0
     assert 2.0 <= client._backoff_for(1) <= 4.0
     assert client._backoff_for(10) <= 30.0
+
+
+def test_a_missing_key_raises_model_unavailable_before_any_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both key variables are removed first, so this can never reach the network.
+
+    It used to escape as the SDK's ValueError and end the discover command with a traceback and
+    exit 1, outside the result contract.
+    """
+    from src.discovery.client import ModelUnavailable
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    client = GeminiClient("gemini-3-flash-preview")
+    with pytest.raises(ModelUnavailable) as exc:
+        client.complete("system", [UserMessage(text="hello")], [])
+    assert "could not start" in str(exc.value)

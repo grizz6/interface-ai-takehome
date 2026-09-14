@@ -418,3 +418,20 @@ def test_a_typed_value_never_reaches_a_step_description() -> None:
     typed = [a for a in outcome.transcript.actions if a.action_kind == "type"]
     assert typed and typed[0].literal_value == typed_value
 
+
+
+def test_a_model_that_cannot_be_reached_ends_as_a_failure_not_a_crash() -> None:
+    """No key, a refused request, or a provider that keeps erroring: a typed failure, exit 40."""
+    from src.discovery.client import ModelUnavailable
+    from src.models.common import FailureClass
+
+    class Unreachable:
+        def complete(self, *_: Any) -> ModelTurn:
+            raise ModelUnavailable("the model client could not start: no key")
+
+    outcome = drive(Unreachable(), FakeSurface())  # type: ignore[arg-type]
+
+    assert isinstance(outcome.result, FailureResult), outcome.result
+    assert outcome.result.error_class is FailureClass.INTERNAL
+    assert "could not start" in outcome.result.observed
+    assert outcome.transcript.stop_reason is DiscoveryStop.ERROR
