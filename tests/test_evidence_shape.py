@@ -266,8 +266,8 @@ def test_a_redacted_value_appears_in_no_file_of_a_completed_run(
         evidence=lambda: writer.ref, sink=writer, allow_draft=True,
     )
     writer.write_result(result)
-    # A success writes no failure/, so force the post mortem too: those two files are the
-    # point of this test and skipping them would make it pass for the wrong reason.
+    # A success writes no failure/, so write it anyway. Those two files are what this test is
+    # about, and skipping them would let it pass for the wrong reason.
     write_failure_artifacts(
         surface, writer, type("R", (), {"kind": "failure", "step_index": 3})()
     )

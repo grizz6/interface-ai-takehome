@@ -189,7 +189,7 @@ def _bind_parameters(
             return CompileError(
                 CompileFailure.INPUT_MATCHES_NO_LITERAL,
                 f"input {remaining[0].name!r} was declared but no recorded step used a "
-                "value. An input the flow never consumes is a false contract, and the "
+                "value. An input the flow never uses would be a false promise to the caller, and the "
                 "schema would reject the artifact for it anyway",
             )
         if len(remaining) == 1 and len(from_goal) == 1:

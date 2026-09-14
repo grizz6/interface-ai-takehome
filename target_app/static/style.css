@@ -1,4 +1,4 @@
-/* Deliberately plain. This app is meant to look like an internal tool from 2004. */
+/* Plain on purpose. This app is meant to look like an internal tool from 2004. */
 body { background: #d7d7d7; font-family: Verdana, Geneva, sans-serif; font-size: 11px;
        color: #1a1a1a; margin: 0; padding: 12px; }
 body.framebody { background: #ffffff; padding: 0; }

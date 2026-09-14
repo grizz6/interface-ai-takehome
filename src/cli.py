@@ -135,10 +135,10 @@ def build_parser() -> argparse.ArgumentParser:
     console.add_argument("--interventions-dir", default=str(INTERVENTIONS_ROOT), metavar="DIR")
     console.add_argument("--lease-path", default=None, metavar="FILE")
 
-    catalog = sub.add_parser("catalog", help="List capabilities, or print one's typed contract.")
+    catalog = sub.add_parser("catalog", help="List capabilities, or show what one takes and returns.")
     catalog_sub = catalog.add_subparsers(dest="catalog_command", required=True)
     listing = catalog_sub.add_parser("list", help="Every capability: id, version, status, types.")
-    describe = catalog_sub.add_parser("describe", help="The full typed contract for one id.")
+    describe = catalog_sub.add_parser("describe", help="Inputs, outputs, outcomes and run command for one id.")
     describe.add_argument("capability_id")
     describe.add_argument("--version", default=None, help="Defaults to the highest version.")
     for command in (listing, describe):
