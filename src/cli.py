@@ -83,6 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="VALUE",
         help="A value that must never appear in evidence. Repeatable.",
     )
+    _add_handoff_options(discover)
     record = sub.add_parser(
         "record", help="Compile a discovery transcript into a capability artifact."
     )
@@ -106,29 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Replay a capability that is still draft. For development only.",
     )
     play.add_argument("--redact", action="append", default=[], metavar="VALUE")
-    play.add_argument(
-        "--interventions-dir",
-        default=str(INTERVENTIONS_ROOT),
-        metavar="DIR",
-        help="Where handoff requests are written for the operator console.",
-    )
-    play.add_argument(
-        "--lease-path",
-        default=None,
-        metavar="FILE",
-        help=(
-            "Share a control lease file with an operator console. Without this the run holds "
-            "an in-process lease and every stopping condition ends the run instead of "
-            "waiting for a person."
-        ),
-    )
-    play.add_argument(
-        "--intervention-timeout",
-        type=int,
-        default=DEFAULT_DEADLINE_SECONDS,
-        metavar="SECONDS",
-        help="How long a handoff waits before the run gives up on an answer.",
-    )
+    _add_handoff_options(play)
 
     console = sub.add_parser("operator", help="Serve the minimal operator console.")
     console.add_argument("--port", type=int, default=8090)
@@ -145,6 +124,49 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--dir", default=str(CAPABILITIES_ROOT), metavar="DIR")
         command.add_argument("--json", action="store_true", help="Machine readable output.")
     return parser
+
+
+def _add_handoff_options(command: argparse.ArgumentParser) -> None:
+    """The same three options on discover and replay, so both can hand over to a person."""
+    command.add_argument(
+        "--interventions-dir",
+        default=str(INTERVENTIONS_ROOT),
+        metavar="DIR",
+        help="Where handoff requests are written for the operator page.",
+    )
+    command.add_argument(
+        "--lease-path",
+        default=None,
+        metavar="FILE",
+        help=(
+            "Share a control lease file with the operator page. Without this the run holds "
+            "an in-process lease and a stuck run ends instead of waiting for a person."
+        ),
+    )
+    command.add_argument(
+        "--intervention-timeout",
+        type=int,
+        default=DEFAULT_DEADLINE_SECONDS,
+        metavar="SECONDS",
+        help="How long a handoff waits before the run gives up on an answer.",
+    )
+
+
+def _session(args: argparse.Namespace, surface: WebSurface, writer: EvidenceWriter,
+             redactor: Redactor) -> Session | None:
+    """A Session that can hand the browser to a person, or None without --lease-path."""
+    if not args.lease_path:
+        return None
+    print(f"handoffs will appear in {args.interventions_dir}, lease at {args.lease_path}")
+    return Session(
+        surface,
+        session_id=writer.run_id,
+        lease_path=args.lease_path,
+        interventions_dir=args.interventions_dir,
+        evidence_sink=writer,
+        deadline_seconds=args.intervention_timeout,
+        redactor=redactor,
+    )
 
 
 def _save_capability(outcome: CompileOutcome, out_dir: Path, *, overwrite: bool = False) -> int:
@@ -228,6 +250,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
         meta=RunMeta.start(run_id, "discovery", policy_path=args.config, model=args.model),
     )
     surface = WebSurface(policy, PolicyGate(policy), headless=not args.headed)
+    session = _session(args, surface, writer, redactor)
 
     try:
         outcome = run_discovery(
@@ -242,6 +265,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
             on_observation=lambda obs: (
                 writer.screenshot(obs.screenshot_png) if obs.screenshot_png else None
             ),
+            session=session,
         )
         # Written before the browser closes, or there would be no page left to capture. Replay
         # uses the same function, so the folders match.
@@ -292,17 +316,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
     surface = WebSurface(policy, PolicyGate(policy), headless=not args.headed)
     # With a lease path, a stuck run hands over to a person. Without one the surface keeps its
     # own in-process lease and nothing waits.
-    session = Session(
-        surface,
-        session_id=writer.run_id,
-        lease_path=args.lease_path,
-        interventions_dir=args.interventions_dir,
-        evidence_sink=writer,
-        deadline_seconds=args.intervention_timeout,
-        redactor=redactor,
-    )
-    if args.lease_path:
-        print(f"escalations will appear in {args.interventions_dir}, lease at {args.lease_path}")
+    session = _session(args, surface, writer, redactor)
     try:
         result = replay(
             capability,
@@ -312,7 +326,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
             evidence=lambda: writer.ref,
             sink=writer,
             allow_draft=args.allow_draft,
-            session=session if args.lease_path else None,
+            session=session,
         )
     finally:
         surface.close()

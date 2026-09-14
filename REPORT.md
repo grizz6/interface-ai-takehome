@@ -90,7 +90,7 @@ a demonstration.
 A run is stuck for a named reason: a locator that matches several elements or none, a page it
 does not recognise, a risky action that needs approval, recovery that ran out, a timeout, or too
 many steps. Discovery also stops when the page looks the same three times in a row, or after
-three policy refusals in a row (0015). Control is a lease with fixed state changes, and every
+three policy refusals in a row (0015), and can hand over just like replay (0048). Control is a lease with fixed state changes, and every
 `act()` and `resolve()` checks it before touching the browser. It is a polled file, so either
 process can restart (0029). The person works in the same visible browser window. I cut screen
 streaming, so they have to be at that machine (0030). The request includes the capability, step,

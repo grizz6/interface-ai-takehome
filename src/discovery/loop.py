@@ -75,6 +75,10 @@ from src.surface.protocol import (
 
 TARGETED_TOOLS = {ToolName.CLICK, ToolName.TYPE_TEXT, ToolName.SELECT_OPTION}
 FULL_OBSERVATIONS_RETAINED = 2
+HANDED_BACK = (
+    "A person looked at the session and handed it back. Look again before deciding anything: "
+    "the screen may have changed."
+)
 
 
 @dataclass(frozen=True)
@@ -423,11 +427,7 @@ class DiscoveryRun:
             reason = str(args.get("reason") or "no reason given")
             self._event(EventKind.STOP, tool="give_up", reason=reason)
             self._ask_for_help(f"the model gave up: {reason}", stop=DiscoveryStop.GAVE_UP)
-            return (
-                "A human looked at the session and handed it back. Look again before "
-                "deciding anything: the screen may have changed.",
-                False,
-            )
+            return HANDED_BACK, False
 
         if name == ToolName.FINISH:
             return self._finish(args, observation)
@@ -454,7 +454,12 @@ class DiscoveryRun:
                     "time the screen is captured. Call look and use a ref from the result.",
                     True,
                 )
-            bundle = self._describe(ref)
+            try:
+                bundle = self.surface.describe(ref)
+            except LocatorAmbiguous as exc:
+                return self._hand_over_or_stop(StuckReason.LOCATOR_AMBIGUOUS, str(exc))
+            except LocatorUnresolved as exc:
+                return self._hand_over_or_stop(StuckReason.LOCATOR_UNRESOLVED, str(exc))
 
         if name is ToolName.NAVIGATE:
             action: Any = NavigateAction(url=str(args.get("url") or ""))
@@ -477,15 +482,6 @@ class DiscoveryRun:
 
         return self._act(action, kind=kind, ref=ref, bundle=bundle, literal=literal)
 
-    def _describe(self, ref: str) -> Any:
-        """Turn the ref into a locator now, while its snapshot is still current."""
-        try:
-            return self.surface.describe(ref)
-        except LocatorAmbiguous as exc:
-            raise self._escalate(StuckReason.LOCATOR_AMBIGUOUS, str(exc)) from exc
-        except LocatorUnresolved as exc:
-            raise self._escalate(StuckReason.LOCATOR_UNRESOLVED, str(exc)) from exc
-
     def _act(
         self,
         action: Any,
@@ -502,11 +498,11 @@ class DiscoveryRun:
             attempted = getattr(action, "url", None)
             return self._refused(exc, kind, attempted)
         except LocatorAmbiguous as exc:
-            raise self._escalate(StuckReason.LOCATOR_AMBIGUOUS, str(exc)) from exc
+            return self._hand_over_or_stop(StuckReason.LOCATOR_AMBIGUOUS, str(exc))
         except LocatorUnresolved as exc:
-            raise self._escalate(StuckReason.LOCATOR_UNRESOLVED, str(exc)) from exc
+            return self._hand_over_or_stop(StuckReason.LOCATOR_UNRESOLVED, str(exc))
         except ActionTimeout as exc:
-            raise self._escalate(StuckReason.STEP_TIMEOUT, str(exc)) from exc
+            return self._hand_over_or_stop(StuckReason.STEP_TIMEOUT, str(exc))
 
         self._consecutive_blocks = 0
         self.transcript.actions.append(
@@ -566,8 +562,24 @@ class DiscoveryRun:
             True,
         )
 
+    def _hand_over_or_stop(self, reason: StuckReason, detail: str) -> tuple[str, bool]:
+        """A control that cannot be pinned down, or a step that timed out.
+
+        With a session, a person takes over and the model is told to look again. Without one,
+        the run stops with NeedsHuman, since guessing is never an option.
+        """
+        if self.session is None:
+            raise self._escalate(reason, detail)
+        self._event(EventKind.VERIFICATION, escalated=reason.value, detail=detail)
+        self._ask_for_help(detail, reason=reason)
+        return HANDED_BACK, False
+
     def _ask_for_help(
-        self, why: str, *, stop: DiscoveryStop = DiscoveryStop.NEEDS_HUMAN
+        self,
+        why: str,
+        *,
+        stop: DiscoveryStop = DiscoveryStop.NEEDS_HUMAN,
+        reason: StuckReason = StuckReason.UNKNOWN_STATE,
     ) -> None:
         """Hand the browser to a person and wait. Raises _Stop if nobody resolves it.
 
@@ -579,7 +591,7 @@ class DiscoveryRun:
             raise _Stop(
                 NeedsHumanResult(
                     intervention_id=f"{self._run_id}-{stop.value}",
-                    reason=StuckReason.UNKNOWN_STATE,
+                    reason=reason,
                     step_index=len(self.transcript.actions),
                     steps=self._traces(),
                     evidence=self.evidence,
@@ -597,15 +609,18 @@ class DiscoveryRun:
             why=why,
             run_id=self._run_id,
         )
-        intervention_id = self.session.escalate(StuckReason.UNKNOWN_STATE, context)
-        self._event(EventKind.VERIFICATION, escalated="unknown_state", detail=why)
+        intervention_id = self.session.escalate(reason, context)
+        self._event(
+            EventKind.VERIFICATION, escalated=reason.value, detail=why,
+            intervention_id=intervention_id,
+        )
 
         resolution = self.session.await_return(intervention_id)
         if resolution is None or resolution.outcome is ResolutionOutcome.ABORTED:
             raise _Stop(
                 NeedsHumanResult(
                     intervention_id=intervention_id,
-                    reason=StuckReason.UNKNOWN_STATE,
+                    reason=reason,
                     step_index=len(self.transcript.actions),
                     steps=self._traces(),
                     evidence=self.evidence,
@@ -697,8 +712,12 @@ def run_discovery(
     limits: DiscoveryLimits | None = None,
     tools: list[ToolSpec] | None = None,
     on_observation: Any | None = None,
+    session: Any = None,
 ) -> DiscoveryOutcome:
-    """Run one discovery attempt. The RunResult is on `.result`, the transcript on `.transcript`."""
+    """Run one discovery attempt. The RunResult is on `.result`, the transcript on `.transcript`.
+
+    Pass a Session to hand the browser to a person when the run gets stuck, as replay does.
+    """
     return DiscoveryRun(
         goal=goal,
         surface=surface,
@@ -710,4 +729,5 @@ def run_discovery(
         limits=limits,
         tools=tools,
         on_observation=on_observation,
+        session=session,
     ).run()

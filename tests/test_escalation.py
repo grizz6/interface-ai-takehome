@@ -597,3 +597,120 @@ def test_declared_sensitive_values_are_redacted_out_of_an_intervention(
     raw = next(Path(wired["interventions"]).glob("*-s5-*.json")).read_text()
     assert "Vacation" not in raw
     assert "<param:nickname>" in raw
+
+
+# ---------------------------------------------------------------------------
+# Discovery can hand over too
+# ---------------------------------------------------------------------------
+def _discover_with(
+    session: Any, surface: Any, live_app: str, turns: list[Any], *, navigate: bool = True
+) -> Any:
+    from conftest import valid_capability
+    from src.discovery.client import ScriptedClient
+    from src.discovery.loop import run_discovery
+
+    client = ScriptedClient(turns)
+    outcome = run_discovery(
+        goal="look up member 100001 and read their name",
+        surface=surface,
+        client=client,
+        evidence=lambda: session.evidence_sink.ref,
+        model="scripted",
+        surface_descriptor=valid_capability().surface,
+        target=live_app + "/member/100001" if navigate else None,
+        session=session,
+    )
+    return outcome, client
+
+
+def _turn(name: str, **args: Any) -> Any:
+    from src.discovery.client import ModelTurn, StopReason, ToolCall
+
+    return ModelTurn(
+        tool_calls=[ToolCall(id=f"c-{name}", name=name, arguments=args)],
+        stop_reason=StopReason.TOOL_USE,
+    )
+
+
+def test_a_stuck_discovery_run_hands_the_live_browser_to_a_person_and_carries_on(
+    wired: dict[str, Any], surface: Any, live_app: str
+) -> None:
+    """The model gives up, a person takes the same browser, hands it back, and the run finishes."""
+    from src.surface.actions import NavigateAction
+
+    # Loaded here rather than by the run, because loading the page again would issue new refs.
+    surface.act(NavigateAction(url=live_app + "/member/100001"))
+    name_cell = next(
+        e for e in surface.observe().elements if e.role == "cell" and e.name == "Marcus Webb"
+    )
+    finish = {
+        "capability_name": "read-member-name",
+        "description": "Looks up a member and reads their name.",
+        "checkpoint": {"kind": "text_present", "text": "Member Detail"},
+        "inputs": [],
+        "outputs": [
+            {
+                "name": "member_name",
+                "type": "string",
+                "description": "The member's name.",
+                "extraction": {"ref": name_cell.ref, "source": "text", "parse": "raw"},
+            }
+        ],
+    }
+    session = ScriptedOperator(
+        surface,
+        outcome=ResolutionOutcome.APPROVED,
+        note="looked at it, carry on",
+        session_id="discovery-handoff",
+        lease_path=wired["lease"],
+        interventions_dir=wired["interventions"],
+        evidence_sink=wired["writer"],
+    )
+    context_before, page_before = surface._context, surface._page
+
+    outcome, client = _discover_with(
+        session, surface, live_app,
+        [_turn("give_up", reason="not sure which record this is"), _turn("finish", **finish)],
+        navigate=False,
+    )
+
+    assert isinstance(outcome.result, SuccessResult), outcome.result
+    assert outcome.result.outputs == {"member_name": "Marcus Webb"}
+    assert session.observed_state is LeaseState.PAUSED
+
+    stored = InterventionStore(wired["interventions"]).all_requests()
+    assert len(stored) == 1
+    request = stored[0]
+    assert request.reason is StuckReason.UNKNOWN_STATE
+    assert "not sure which record this is" in request.why
+    assert request.goal_text == "look up member 100001 and read their name"
+    assert "/member/100001" in request.url and request.aria_snapshot
+    assert request.resolution is not None
+    assert request.resolution.outcome is ResolutionOutcome.APPROVED
+
+    _, messages, _ = client.calls[1]
+    handed_back = [m for m in messages if getattr(m, "role", "") == "tool_result"]
+    assert any("handed it back" in m.content for m in handed_back)
+
+    assert surface._context is context_before and surface._page is page_before
+    assert LeaseStore(wired["lease"]).read().state is LeaseState.RUNNING
+
+
+def test_an_aborted_discovery_handoff_names_the_real_intervention(
+    wired: dict[str, Any], surface: Any, live_app: str
+) -> None:
+    session = ScriptedOperator(
+        surface,
+        outcome=ResolutionOutcome.ABORTED,
+        session_id="discovery-abort",
+        lease_path=wired["lease"],
+        interventions_dir=wired["interventions"],
+        evidence_sink=wired["writer"],
+    )
+    outcome, _ = _discover_with(
+        session, surface, live_app, [_turn("give_up", reason="cannot read this screen")]
+    )
+
+    assert isinstance(outcome.result, NeedsHumanResult), outcome.result
+    stored = InterventionStore(wired["interventions"]).all_requests()
+    assert [r.id for r in stored] == [outcome.result.intervention_id]

@@ -1083,3 +1083,26 @@ cleanup warning. Checking whether it is empty means reading its value, and nothi
 
 Weak spot: it uses the `internal` failure class, the closest existing one. A dedicated class would be
 clearer, but that is a schema change, and I would propose it before making it.
+
+## 0048. Discovery can hand the browser to a person too
+
+Final fixes.
+
+The discovery loop had code to hand over to a person, but nothing could reach it: `run_discovery`
+took no session and `discover` never made one. So a stuck discovery run, which the brief lists
+first under 3.6, could only stop with NeedsHuman. `discover` now takes the same `--lease-path`,
+`--interventions-dir` and `--intervention-timeout` options as `replay`, and passes a Session in.
+
+With a session, four things hand over instead of stopping: the model giving up, the screen not
+changing three times in a row, a control that matches several elements or none, and a step that
+times out. The request carries the goal, the step count, the reason and a screenshot. When the
+person hands back, the model is told to look again, because they may have changed the screen.
+Aborting, or nobody answering, still ends the run with NeedsHuman, now naming the real request.
+
+Rejected: resume at the exact action that got stuck. Discovery has no recorded step to resume,
+and the model is better placed than the loop to decide what to do on the screen the person
+left behind.
+
+Weak spot: there is no sample run of it. It is covered by a test on the real browser with a
+scripted operator, a test for the stuck locator case, and a CLI test that checks the request
+file is written.

@@ -272,3 +272,29 @@ def test_record_will_not_silently_replace_a_different_capability(tmp_path: Path)
     forced = run_cli("record", "--transcript", transcript, "--out", str(out), "--overwrite")
     assert_exit(forced, 0, "--overwrite replaces it")
     assert path.read_text() == original
+
+
+def test_discover_writes_a_handoff_request_when_given_a_lease(tmp_path: Path, live_app: str) -> None:
+    """--lease-path works on discover as it does on replay. Nobody answers, so it exits 20."""
+    interventions = tmp_path / "interventions"
+    result = run_cli(
+        "discover",
+        "--goal", "look up member 100001",
+        "--target", live_app + "/search",
+        "--dry-run", str(write_script(tmp_path, live_app)),
+        "--config", str(policy_for(tmp_path, live_app)),
+        "--evidence-dir", str(tmp_path / "evidence"),
+        "--lease-path", str(interventions / "lease.json"),
+        "--interventions-dir", str(interventions),
+        "--intervention-timeout", "1",
+        "--max-steps", "4",
+    )
+    assert_exit(result, EXIT_CODES["needs_human"], "an unanswered discovery handoff should exit 20")
+
+    requests = [p for p in interventions.glob("*.json") if p.name != "lease.json"]
+    assert len(requests) == 1, f"expected one handoff request, found {requests}"
+    request = json.loads(requests[0].read_text())
+    assert request["reason"] == "unknown_state"
+    assert "scripted stop" in request["why"]
+    assert json.loads((interventions / "lease.json").read_text())["state"] == "closed"
+

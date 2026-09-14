@@ -433,3 +433,73 @@ def test_a_model_that_cannot_be_reached_ends_as_a_failure_not_a_crash() -> None:
     assert outcome.result.error_class is FailureClass.INTERNAL
     assert "could not start" in outcome.result.observed
     assert outcome.transcript.stop_reason is DiscoveryStop.ERROR
+
+
+# -- handing over to a person ----------------------------------------------------
+class AmbiguousSurface(FakeSurface):
+    """describe() cannot pin the control down the first time, then can."""
+
+    def __init__(self) -> None:
+        # A different screen after each action, so the stall check stays out of it.
+        super().__init__(snapshots=[SNAPSHOT + f'  - cell "screen {i}"\n' for i in range(5)])
+        self.describes = 0
+
+    def describe(self, ref: str) -> LocatorBundle:
+        self.describes += 1
+        if self.describes == 1:
+            from src.surface.protocol import LocatorAmbiguous
+
+            raise LocatorAmbiguous("role_name matched 2 elements")
+        return super().describe(ref)
+
+
+class FakeSession:
+    """Stands in for a person who takes the browser and gives it back."""
+
+    def __init__(self, outcome: str = "approved") -> None:
+        from src.models.common import ResolutionOutcome
+
+        self.outcome = ResolutionOutcome(outcome)
+        self.escalated: list[tuple[StuckReason, Any]] = []
+        self.resumed = 0
+
+    def escalate(self, reason: StuckReason, context: Any) -> str:
+        self.escalated.append((reason, context))
+        return f"intervention-{len(self.escalated)}"
+
+    def await_return(self, intervention_id: str) -> Any:
+        return type("Resolution", (), {"outcome": self.outcome})()
+
+    def resume(self) -> None:
+        self.resumed += 1
+
+
+def test_a_control_that_cannot_be_pinned_down_is_handed_to_a_person_not_guessed() -> None:
+    session = FakeSession()
+    client = ScriptedClient(
+        [
+            turn(call("click", ref="e6")),
+            turn(call("click", ref="e6")),
+            turn(call("finish", **FINISH_ARGS)),
+        ]
+    )
+    outcome = drive(client, AmbiguousSurface(), session=session)
+
+    assert isinstance(outcome.result, SuccessResult), outcome.result
+    assert [reason for reason, _ in session.escalated] == [StuckReason.LOCATOR_AMBIGUOUS]
+    assert "matched 2 elements" in session.escalated[0][1].why
+    assert session.resumed == 1
+    _, messages, _ = client.calls[1]
+    assert any(
+        "handed it back" in getattr(m, "content", "")
+        for m in messages if getattr(m, "role", "") == "tool_result"
+    )
+
+
+def test_without_a_session_the_same_control_stops_the_run() -> None:
+    client = ScriptedClient([turn(call("click", ref="e6"))])
+    outcome = drive(client, AmbiguousSurface())
+
+    assert isinstance(outcome.result, NeedsHumanResult)
+    assert outcome.result.reason is StuckReason.LOCATOR_AMBIGUOUS
+

@@ -219,6 +219,11 @@ operator reported the step as done but the page does not show it.
 
 Without `--lease-path` there is nobody to hand over to, so the run exits 20 instead of waiting.
 
+`discover` takes the same `--lease-path` and `--interventions-dir` options. With them, a
+discovery run that gets stuck (the model gives up, the screen stops changing, a control cannot
+be pinned down, or a step times out) hands the browser over the same way, and the model looks
+again once control comes back.
+
 ## Capability catalog
 
 The catalog tells a calling agent which capabilities exist and what each one takes and returns,
