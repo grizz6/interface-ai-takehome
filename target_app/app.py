@@ -1,13 +1,10 @@
-"""Stand-in for a legacy back-office banking application.
+"""A fake old-style back-office banking app for the automation to work against.
 
-Exists only to give the automation a realistic surface to drive. Not a deliverable
-of the project and deliberately capped in size. See target_app/README.md for routes,
-seed members, and how to arm each fault.
+Kept small on purpose. See target_app/README.md for routes, seed members and faults.
 
-Two classes of exceptional state live here and they are kept apart on purpose.
-Not found, permission denied, and validation failure are REAL: they fall out of the
-seed data and the submitted input. The four faults on /dev/faults are SIMULATED
-runtime conditions, armed by hand, firing once each.
+There are two kinds of error state and they are kept separate. Not found, permission denied
+and validation errors are real: they come from the seed data and the form input. The four
+faults on /dev/faults are simulated: turned on by hand, and each fires once.
 """
 from __future__ import annotations
 
@@ -29,7 +26,7 @@ FAULTS = ("interstitial", "session_expired", "slow", "server_error")
 SKIP_FAULT_PREFIXES = ("/static/", "/dev/", "/maintenance", "/session-expired")
 
 app = Flask(__name__)
-# Local single-process dev app with no auth and no real data. Not a credential.
+# Local dev app with no login and no real data. This is not a real secret.
 app.secret_key = "cedar-ridge-local-dev"
 
 VARIANT_ID = os.environ.get("VARIANT", "a")
@@ -61,10 +58,9 @@ def _requested_path() -> str:
 
 
 # --------------------------------------------------------------------------
-# Simulated faults. Armed on /dev/faults, stored in the Flask session, fired
-# once on the next GET, then disarmed. GET only: an interstitial or a session
-# expiry fired on a POST would discard the submission and leave the Continue
-# control with nothing to resume, which is noise rather than signal.
+# Simulated faults. Turned on at /dev/faults, kept in the Flask session, fired
+# once on the next GET, then turned off. GET only, because firing on a POST would
+# throw away the form submission and leave Continue with nothing to go back to.
 # --------------------------------------------------------------------------
 @app.before_request
 def fire_armed_fault() -> Response | WerkzeugResponse | tuple[str, int] | None:
@@ -112,12 +108,11 @@ def search_submit() -> str | WerkzeugResponse:
 
 
 def _guard(member_id: str) -> tuple[dict[str, Any] | None, str | None]:
-    """Return (member, screen). Exactly one is populated.
+    """Return (member, screen). Exactly one is set.
 
-    A missing record and a restricted record are ordinary business outcomes, so both
-    render a real screen with HTTP 200 rather than a 404 or a 403. The automation is
-    meant to read the screen, not the status line, because that is what it will have
-    to do against the real systems this stands in for.
+    Not found and restricted are normal business outcomes, so both show a page with
+    HTTP 200 instead of a 404 or 403. The automation should read the screen, not the
+    status code, because that is all it gets from real systems like this.
     """
     member = MEMBERS.get(member_id)
     if member is None:
@@ -152,12 +147,11 @@ def member_panel(member_id: str) -> str:
 
 @app.get("/member/<member_id>/loan-servicing")
 def loan_servicing(member_id: str) -> str:
-    """Where the Loan Accounts Select lands.
+    """Where the Loan Accounts Select button goes.
 
-    Deliberately NOT the sub-account form. The two Select buttons carry identical
-    accessible names, so tier 3 is the only strategy that can tell them apart, and
-    that claim is only testable if resolving the wrong one goes somewhere visibly
-    different. This screen is that difference.
+    Not the sub-account form, on purpose. The two Select buttons have the same name, so
+    only tier 3 can tell them apart, and you can only test that if clicking the wrong one
+    ends up somewhere different. This page is that somewhere.
     """
     member, screen = _guard(member_id)
     if screen is not None:
@@ -307,13 +301,11 @@ def dev_faults_arm() -> WerkzeugResponse:
 
 @app.get("/dev/reset")
 def dev_reset() -> str:
-    """Return the application to its seeded baseline.
+    """Put the app back to its starting state.
 
-    Replay has to start from a known state. Without this, sub-accounts opened by one run
-    accumulate for the life of the process and the issued account number keeps climbing, so
-    the same capability replayed twice would not produce the same outputs. Lives under /dev/
-    on purpose: the allowlist rule that keeps the agent out of the fault console keeps it out
-    of here too.
+    Replays need a known starting point. Without this, sub-accounts from earlier runs pile up
+    and the account number keeps going up, so two replays would give different outputs. It is
+    under /dev/ so the policy rule that blocks the fault page blocks this too.
     """
     discarded = sum(len(accounts) for accounts in OPENED.values())
     OPENED.clear()

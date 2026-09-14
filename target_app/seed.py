@@ -1,10 +1,9 @@
-"""Seed data and the variant string table for the stand-in application.
+"""Seed data and the text for each variant of the fake app.
 
-Every user-visible string lives in VARIANTS. Templates read from it rather than
-hardcoding text, so a second tenant variant can later be added as another entry in
-this dict instead of as a forked set of templates.
+All visible text lives in VARIANTS and templates read it from there, so a second tenant
+would be another entry in this dict rather than a copy of the templates.
 
-All member data here is fabricated. No real person, account, or institution.
+All member data here is made up. No real people, accounts or banks.
 """
 from __future__ import annotations
 

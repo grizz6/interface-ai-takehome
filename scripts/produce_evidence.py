@@ -1,18 +1,16 @@
-"""Drive the three curated runs the plain CLI cannot produce on its own.
+"""Produce the sample runs the plain CLI cannot produce by itself.
 
-Two of them need a fault armed, and the target app keeps armed faults in the Flask session
-cookie, so a fault armed from curl belongs to curl's session and a separate `cua replay`
-process opens a fresh browser that never sees it. Arming has to happen in the same browser
-context the run then uses.
+The fault runs need a fault turned on first. The target app keeps faults in the Flask session
+cookie, so a fault turned on with curl belongs to curl's session, and a separate replay process
+opens a new browser that never sees it. So the fault has to be turned on in the same browser
+the run then uses.
 
-The third drives a control handoff. The operator console runs as its own process and the lease
-moves over real HTTP; what happens inside this script is the part that has to: Playwright's
-sync API binds a page to the thread that created it, so the clicks a person would make have to
-be issued from the thread that owns the browser. See DECISIONS.md 0035.
+The handoff run needs a person's click. The operator page runs as its own process and the lease
+moves over real HTTP, but Playwright's sync API ties a page to the thread that created it, so
+the click has to come from this script. See DECISIONS.md 0035.
 
-Everything here composes the public API and writes through the phase 8 EvidenceWriter, so the
-directories are the same shape as the ones `cua replay` produces. Nothing writes a file by
-hand and nothing edits a result.
+Everything goes through the normal code and the same EvidenceWriter as the CLI, so the folders
+look the same. Nothing writes files by hand or edits a result.
 """
 from __future__ import annotations
 
@@ -43,10 +41,10 @@ SUBACCOUNT = "capabilities/open-member-subaccount-1.0.0.json"
 
 
 def arm(page: Any, base_url: str, fault: str) -> None:
-    """Arm a fault the way a person does, through the developer console, in this session.
+    """Turn on a fault through the fault page, in this browser session.
 
-    Driven on the raw page rather than through the surface because the policy denies /dev/.
-    That denial constrains the automation under test, not the harness setting the scene.
+    Uses the raw page, not the surface, because the policy blocks /dev/. That rule is for the
+    automation being tested, not for this setup step.
     """
     page.goto(f"{base_url}/dev/faults")
     page.get_by_role("button", name=f"Arm {fault}", exact=True).click()
@@ -92,11 +90,11 @@ def run_with_fault(fault: str, base_url: str, capability_path: str = LOOKUP) -> 
 
 
 class ConsoleOperator(Session):
-    """Waits for a person to take control through the console, then performs their clicks.
+    """Waits for someone to take control on the operator page, then clicks Confirm for them.
 
-    The lease really does move between two processes: this one and the console. What is
-    scripted is only the physical act of clicking, because it cannot be issued from anywhere
-    else. Everything the console does is a real HTTP request made by a real operator.
+    The lease really moves between this process and the operator page. Only the click itself is
+    scripted, because it can only come from this thread. Everything on the operator page is a
+    real HTTP request.
     """
 
     def await_return(self, intervention_id: str, **kwargs: Any) -> Any:

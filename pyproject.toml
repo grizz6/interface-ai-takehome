@@ -6,11 +6,10 @@ dependencies = [
     "playwright>=1.60",  # mode="ai" and boxes are not available before this
     "pydantic>=2",
     "google-genai>=2.3.0",  # Interactions API needs 2.3 or later
-    # Floors below are the minor versions the full test suite last passed on. Older versions
-    # may well work; they are not claimed to.
+    # These minimums are the versions the tests last passed on. Older ones may work too.
     "flask>=3.1",
     "python-dotenv>=1.2",
-    "pyyaml>=6.0",  # record-time syntax check on Signal.aria_template
+    "pyyaml>=6.0",  # checks Signal.aria_template is valid YAML
 ]
 
 [project.optional-dependencies]
@@ -25,14 +24,12 @@ files = ["src/models", "src/replay", "src/surface", "src/policy", "src/discovery
 strict = true
 
 [[tool.mypy.overrides]]
-# PyYAML ships no type stubs. An override here beats adding types-PyYAML as a second
-# dependency for one call, and the call site is three lines wide.
+# PyYAML has no type stubs, and adding types-PyYAML for one call is not worth it.
 module = "yaml"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-# Bare `pytest` does not add the repo root to sys.path the way `python -m pytest` does,
-# so `from src.models import ...` fails without this. design rules section 11 says the
-# command is `pytest`, so the fix belongs in config rather than in the Makefile.
+# Plain `pytest` does not put the repo root on sys.path the way `python -m pytest` does,
+# so `from src.models import ...` would fail without this.
 pythonpath = ["."]
 testpaths = ["tests"]

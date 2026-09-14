@@ -1,11 +1,11 @@
 .PHONY: app discover record replay operator test schemas
 
-# Every target uses the project venv. `python3` alone is the system interpreter, which
-# does not have this project's dependencies, so `make app` in a fresh clone failed.
+# Every target uses the project venv, since the system python3 does not have the
+# dependencies installed.
 PY := .venv/bin/python
 
-# run the local target app. Variant A only: seed.py defines no variant b, so VARIANT=b
-# raises KeyError on every request. PORT and VARIANT are still read from the environment.
+# run the local target app. Only variant a exists, so VARIANT=b fails with KeyError on every
+# request. PORT and VARIANT are read from the environment.
 app:
 	$(PY) target_app/app.py
 
