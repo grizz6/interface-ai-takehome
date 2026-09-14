@@ -1,0 +1,386 @@
+{
+  "schema_version": "1.0",
+  "capability_id": "lookup-member-savings-balance",
+  "version": "1.3.0",
+  "name": "lookup-member-savings-balance",
+  "description": "Look up a member by ID and read their current savings balance.",
+  "status": "draft",
+  "surface": {
+    "kind": "legacy_web",
+    "app_id": "localhost",
+    "variant_id": null,
+    "base_url": "http://localhost:8080",
+    "entry_path": "/",
+    "fingerprint": {
+      "title": null,
+      "brand_text": null,
+      "landmark_signals": [],
+      "aria_template": null,
+      "captured_at": "2026-09-12T02:56:45.289847Z"
+    }
+  },
+  "inputs": [
+    {
+      "name": "member_id",
+      "type": "string",
+      "required": true,
+      "description": "Member ID to look up",
+      "example": null,
+      "sensitivity": "pii",
+      "pattern": null
+    }
+  ],
+  "outputs": [
+    {
+      "name": "savings_balance",
+      "type": "currency",
+      "description": "Current savings account balance",
+      "extraction": {
+        "locator": {
+          "primary": {
+            "strategy": "role_name",
+            "role": "cell",
+            "name": "4,182.55",
+            "exact": true
+          },
+          "fallbacks": [
+            {
+              "strategy": "container_ordinal",
+              "container": {
+                "heading_text": "Deposit Accounts",
+                "role": "table",
+                "dom_id_hint": null
+              },
+              "role": "cell",
+              "ordinal": 0,
+              "name": "4,182.55"
+            },
+            {
+              "strategy": "text_relation",
+              "text": "4,182.55",
+              "exact": true,
+              "container": null
+            }
+          ],
+          "frame_path": [
+            "maincontent"
+          ],
+          "geometry_hint": {
+            "x": 557,
+            "y": 119,
+            "width": 288,
+            "height": 23
+          },
+          "recorded_accessible_name": "4,182.55",
+          "notes": null
+        },
+        "source": "text",
+        "attribute": null,
+        "parse": "currency",
+        "strip_pattern": null,
+        "required": true
+      },
+      "sensitivity": "none"
+    }
+  ],
+  "steps": [
+    {
+      "index": 0,
+      "description": "navigate",
+      "action": "navigate",
+      "target": null,
+      "url": "/",
+      "value": null,
+      "risk": "safe_reversible",
+      "wait": {
+        "condition": "load",
+        "signal": null,
+        "timeout_ms": 10000,
+        "poll_ms": 250,
+        "retry_on_timeout": 0
+      },
+      "postcondition": null
+    },
+    {
+      "index": 1,
+      "description": "click",
+      "action": "click",
+      "target": {
+        "primary": {
+          "strategy": "role_name",
+          "role": "link",
+          "name": "Member Lookup",
+          "exact": true
+        },
+        "fallbacks": [
+          {
+            "strategy": "text_relation",
+            "text": "Member Lookup",
+            "exact": true,
+            "container": null
+          }
+        ],
+        "frame_path": [],
+        "geometry_hint": {
+          "x": 63,
+          "y": 53,
+          "width": 88,
+          "height": 14
+        },
+        "recorded_accessible_name": "Member Lookup",
+        "notes": "tier 2 unavailable: no text bearing cell labels this element"
+      },
+      "url": null,
+      "value": null,
+      "risk": "safe_reversible",
+      "wait": {
+        "condition": "load",
+        "signal": null,
+        "timeout_ms": 10000,
+        "poll_ms": 250,
+        "retry_on_timeout": 0
+      },
+      "postcondition": null
+    },
+    {
+      "index": 2,
+      "description": "type <param:member_id>",
+      "action": "type",
+      "target": {
+        "primary": {
+          "strategy": "role_name",
+          "role": "textbox",
+          "name": "Member ID",
+          "exact": true
+        },
+        "fallbacks": [
+          {
+            "strategy": "label_relation",
+            "label_text": "Member ID",
+            "relation": "cell_to_left",
+            "role": "textbox"
+          },
+          {
+            "strategy": "container_ordinal",
+            "container": {
+              "heading_text": "Member ID",
+              "role": "table",
+              "dom_id_hint": null
+            },
+            "role": "textbox",
+            "ordinal": 0,
+            "name": "Member ID"
+          },
+          {
+            "strategy": "text_relation",
+            "text": "Member ID",
+            "exact": true,
+            "container": null
+          },
+          {
+            "strategy": "css_fallback",
+            "css": "#ctl00_ContentPlaceHolder1_txtMemberId",
+            "brittle": true,
+            "note": "brittle, recorded because no better tier applied. no reason recorded"
+          }
+        ],
+        "frame_path": [],
+        "geometry_hint": {
+          "x": 123,
+          "y": 126,
+          "width": 134,
+          "height": 22
+        },
+        "recorded_accessible_name": "Member ID",
+        "notes": null
+      },
+      "url": null,
+      "value": {
+        "source": "param",
+        "param": "member_id"
+      },
+      "risk": "safe_reversible",
+      "wait": {
+        "condition": "load",
+        "signal": null,
+        "timeout_ms": 10000,
+        "poll_ms": 250,
+        "retry_on_timeout": 0
+      },
+      "postcondition": null
+    },
+    {
+      "index": 3,
+      "description": "click",
+      "action": "click",
+      "target": {
+        "primary": {
+          "strategy": "role_name",
+          "role": "button",
+          "name": "Search",
+          "exact": true
+        },
+        "fallbacks": [
+          {
+            "strategy": "container_ordinal",
+            "container": {
+              "heading_text": "Member ID",
+              "role": "table",
+              "dom_id_hint": null
+            },
+            "role": "button",
+            "ordinal": 0,
+            "name": "Search"
+          },
+          {
+            "strategy": "text_relation",
+            "text": "Search",
+            "exact": true,
+            "container": null
+          },
+          {
+            "strategy": "css_fallback",
+            "css": "#ctl00_ContentPlaceHolder1_btnSearch",
+            "brittle": true,
+            "note": "brittle, recorded because no better tier applied. tier 2 unavailable: no text bearing cell labels this element"
+          }
+        ],
+        "frame_path": [],
+        "geometry_hint": {
+          "x": 123,
+          "y": 156,
+          "width": 60,
+          "height": 20
+        },
+        "recorded_accessible_name": "Search",
+        "notes": "tier 2 unavailable: no text bearing cell labels this element"
+      },
+      "url": null,
+      "value": null,
+      "risk": "safe_reversible",
+      "wait": {
+        "condition": "load",
+        "signal": null,
+        "timeout_ms": 10000,
+        "poll_ms": 250,
+        "retry_on_timeout": 0
+      },
+      "postcondition": null
+    }
+  ],
+  "checkpoint": {
+    "signal": {
+      "kind": "text_present",
+      "text": "Member Detail - Member ID",
+      "pattern": null,
+      "url_pattern": null,
+      "locator": null,
+      "aria_template": null,
+      "frame_path": [],
+      "case_sensitive": false
+    },
+    "description": "Look up a member by ID and read their current savings balance.",
+    "timeout_ms": 5000
+  },
+  "known_outcomes": [
+    {
+      "code": "member_not_found",
+      "description": "No member record matches the supplied member id.",
+      "detect": {
+        "kind": "text_present",
+        "text": "No member record matches",
+        "pattern": null,
+        "url_pattern": null,
+        "locator": null,
+        "aria_template": null,
+        "frame_path": [],
+        "case_sensitive": false
+      },
+      "check_after_step": 3,
+      "terminal": true,
+      "partial_outputs": []
+    },
+    {
+      "code": "member_restricted",
+      "description": "The member record exists but this operator may not view it.",
+      "detect": {
+        "kind": "text_present",
+        "text": "This member record is restricted",
+        "pattern": null,
+        "url_pattern": null,
+        "locator": null,
+        "aria_template": null,
+        "frame_path": [],
+        "case_sensitive": false
+      },
+      "check_after_step": 3,
+      "terminal": true,
+      "partial_outputs": []
+    }
+  ],
+  "recoveries": [
+    {
+      "name": "dismiss_maintenance_interstitial",
+      "detect": {
+        "kind": "text_present",
+        "text": "undergoing scheduled maintenance",
+        "pattern": null,
+        "url_pattern": null,
+        "locator": null,
+        "aria_template": null,
+        "frame_path": [],
+        "case_sensitive": false
+      },
+      "action": "dismiss",
+      "action_target": {
+        "primary": {
+          "strategy": "role_name",
+          "role": "link",
+          "name": "Continue",
+          "exact": true
+        },
+        "fallbacks": [
+          {
+            "strategy": "text_relation",
+            "text": "Continue",
+            "exact": true,
+            "container": null
+          }
+        ],
+        "frame_path": [],
+        "geometry_hint": null,
+        "recorded_accessible_name": "Continue",
+        "notes": "hand authored against the maintenance screen, not observed during discovery"
+      },
+      "max_attempts": 2,
+      "applies_to_steps": null
+    },
+    {
+      "name": "reauthenticate_after_session_expiry",
+      "detect": {
+        "kind": "text_present",
+        "text": "Your session has expired",
+        "pattern": null,
+        "url_pattern": null,
+        "locator": null,
+        "aria_template": null,
+        "frame_path": [],
+        "case_sensitive": false
+      },
+      "action": "reauthenticate",
+      "action_target": null,
+      "max_attempts": 1,
+      "applies_to_steps": null
+    }
+  ],
+  "overrides": {},
+  "provenance": {
+    "discovered_by_model": "gemini-3.6-flash",
+    "discovery_run_id": "20260912-025644-fb49",
+    "recorded_at": "2026-09-12T02:58:05.548152Z",
+    "goal_text": "look up member <param:member_id> and read their current savings balance",
+    "raw_step_count": 4,
+    "redaction_policy_version": "1.0",
+    "human_edited": true
+  }
+}

@@ -66,7 +66,10 @@ def _run(capability: Capability, params: dict[str, str], surface: Any, policy: A
 def test_an_expired_session_restarts_the_flow_and_still_succeeds(
     live_app: str, surface: Any, policy_config: Any, tmp_path: Path
 ) -> None:
-    capability = _with_rule(LOOKUP, live_app, _reauthenticate("Your session has expired"))
+    # The committed 1.3.0 artifact, unmodified: this is the rule that ships.
+    data = json.loads(Path("capabilities/lookup-member-savings-balance-1.3.0.json").read_text())
+    data["surface"]["base_url"] = live_app
+    capability = Capability.model_validate(data)
     _arm(surface, live_app, "session_expired")
 
     result, log = _run(capability, {"member_id": "100001"}, surface, policy_config, tmp_path)

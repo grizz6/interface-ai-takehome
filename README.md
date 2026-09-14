@@ -252,6 +252,10 @@ lookup-member-savings-balance 1.2.0 [draft]
   Look up a member by ID and read their current savings balance.
   in:  member_id: string
   out: savings_balance: currency
+lookup-member-savings-balance 1.3.0 [draft]
+  Look up a member by ID and read their current savings balance.
+  in:  member_id: string
+  out: savings_balance: currency
 open-member-subaccount 1.0.0 [draft]
   Opens a deposit sub-account against an existing member relationship.
   in:  member_id: string, account_type: string, nickname: string, initial_deposit: currency
@@ -267,9 +271,9 @@ open-member-subaccount 1.1.0 [draft]
 ```
 
 ```
-lookup-member-savings-balance 1.2.0 [draft]
+lookup-member-savings-balance 1.3.0 [draft]
   lookup-member-savings-balance: Look up a member by ID and read their current savings balance.
-  file:    capabilities/lookup-member-savings-balance-1.2.0.json
+  file:    capabilities/lookup-member-savings-balance-1.3.0.json
   surface: legacy_web localhost variant (unspecified)
 
 inputs
@@ -288,7 +292,7 @@ requires human approval before
 exit codes
   success 0, business_outcome 10, needs_human 20, policy_blocked 30, failure 40
 invoke
-  .venv/bin/python -m src.cli replay --capability capabilities/lookup-member-savings-balance-1.2.0.json --params '{"member_id": "<string>"}' --allow-draft
+  .venv/bin/python -m src.cli replay --capability capabilities/lookup-member-savings-balance-1.3.0.json --params '{"member_id": "<string>"}' --allow-draft
 ```
 
 `describe` picks the highest version unless `--version` is given. `member_id` is `pii`, and the
@@ -296,16 +300,16 @@ schema forbids a sensitive input from carrying an example, so the invoke line ho
 placeholder rather than a value. Filling it in and running that line is the invocation:
 
 ```bash
-.venv/bin/python -m src.cli replay --capability capabilities/lookup-member-savings-balance-1.2.0.json --params '{"member_id": "100001"}' --allow-draft --redact 100001
+.venv/bin/python -m src.cli replay --capability capabilities/lookup-member-savings-balance-1.3.0.json --params '{"member_id": "100001"}' --allow-draft --redact 100001
 ```
 
 ```
-evidence/20260913-005333-2be9
+evidence/20260914-145441-4f20
 exit: 0
 ```
 
 ```
-$ .venv/bin/python -c "import json; r = json.load(open('evidence/20260913-005333-2be9/result.json')); print(r['kind'], r['outputs'], [s['locator_strategy_used'] for s in r['steps']])"
+$ .venv/bin/python -c "import json; r = json.load(open('evidence/20260914-145441-4f20/result.json')); print(r['kind'], r['outputs'], [s['locator_strategy_used'] for s in r['steps']])"
 success {'savings_balance': 4182.55} [None, 'role_name', 'role_name', 'role_name']
 ```
 

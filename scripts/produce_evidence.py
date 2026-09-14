@@ -75,9 +75,9 @@ def build(capability_path: str, params: dict[str, str], redact: list[str]) -> tu
     return policy, capability, writer, surface
 
 
-def run_with_fault(fault: str, base_url: str) -> int:
+def run_with_fault(fault: str, base_url: str, capability_path: str = LOOKUP) -> int:
     params = {"member_id": "100001"}
-    policy, capability, writer, surface = build(LOOKUP, params, ["100001"])
+    policy, capability, writer, surface = build(capability_path, params, ["100001"])
     try:
         arm(surface.page, base_url, fault)
         result = replay(
@@ -163,6 +163,10 @@ def main() -> int:
     fault = sub.add_parser("fault", help="Arm a fault, then replay the lookup capability.")
     fault.add_argument("name", choices=["interstitial", "slow", "server_error", "session_expired"])
     fault.add_argument("--target", default="http://localhost:8080")
+    fault.add_argument(
+        "--capability", default=LOOKUP,
+        help="Which lookup capability to replay. Runs 04 and 05 used the default.",
+    )
 
     handoff = sub.add_parser("handoff", help="Replay the sub-account capability and pause.")
     handoff.add_argument("--lease-path", default="interventions/lease.json")
@@ -170,7 +174,7 @@ def main() -> int:
 
     args = parser.parse_args()
     if args.what == "fault":
-        return run_with_fault(args.name, args.target)
+        return run_with_fault(args.name, args.target, args.capability)
     return run_handoff(args.lease_path, args.interventions_dir)
 
 
