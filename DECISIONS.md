@@ -858,9 +858,11 @@ the remaining step clicks a control that no longer exists. The run would fail wi
 error at step 4 and the real answer, which was on screen one step earlier, would never be
 reported. Outcomes are checked after every step because the flow can end early.
 
-Known weakness: `check_after_step` is a lower bound, so an outcome declared for step 3 is also
-tested at step 4. For terminal outcomes that is harmless, because the first match returns. For
-a non-terminal outcome it would mean repeated evaluation, and nothing yet declares one.
+Known weakness: `check_after_step` is an exact step, not a lower bound: an outcome declared for
+step 3 is checked after step 3 and at no other step, while `None` means after every step. (An
+earlier version of this entry said lower bound, which the engine never did.) So an outcome that
+can appear at more than one point in a flow has to be declared with `None`, or it will be missed
+at the steps it does not name. 0045 is what that looks like when it happens.
 
 ## 0024. irreversible steps get zero retries
 
