@@ -1,21 +1,19 @@
-"""The richer signal section 3.5 asks for, captured at the step that went wrong.
+"""The failure files section 3.5 of the brief asks for, saved when a run does not succeed.
 
-Three artifacts and an explanation, in `failure/`:
+Three raw files and one that explains them, in `failure/`:
 
-    dom.html        what the page actually was
-    aria.yaml       what the page looked like to the accessibility tree
-    screenshot.png  what it looked like to a person
-    context.json    why that was not what was expected
+    dom.html        what the page really was
+    aria.yaml       what the accessibility tree showed
+    screenshot.png  what a person would have seen
+    context.json    why that was not what the run expected
 
-The first three are raw. `context.json` is the one that explains, and it is the one worth
-getting right: a screenshot of a legacy back office screen tells you almost nothing about
-which of five locator tiers was being tried, or that tier one matched three elements when it
-should have matched one. That is the sentence a person actually needs, and no picture of the
-page contains it.
+`context.json` matters most. A screenshot of an old back-office screen will not tell you which
+locator tier was being tried, or that tier one matched three elements instead of one, and that
+is usually what you need to know.
 
-The directory is written on any result that is not success, business outcomes included. A
-business outcome is a correct answer rather than a fault, so `context.json` records the real
-`result_kind` and the folder name is not read as a verdict. See DECISIONS.md 0036.
+The folder is written for any result that is not a success, including business outcomes. A
+business outcome is a correct answer, so `context.json` records the real `result_kind` and the
+folder name should not be read as the verdict. See DECISIONS.md 0036.
 """
 from __future__ import annotations
 
@@ -27,7 +25,7 @@ STRICT: Final[ConfigDict] = ConfigDict(extra="forbid")
 
 
 class TierProbe(BaseModel):
-    """One locator tier and what it actually matched when the step failed."""
+    """One locator tier and how many elements it matched when the step failed."""
 
     model_config = STRICT
 
@@ -39,7 +37,7 @@ class TierProbe(BaseModel):
 
 
 class FailureContext(BaseModel):
-    """context.json. The explanation, not the raw material."""
+    """context.json: what went wrong, in words."""
 
     model_config = STRICT
 
@@ -54,11 +52,11 @@ class FailureContext(BaseModel):
 
 
 def probe_bundle(surface: Any, bundle: Any) -> list[TierProbe]:
-    """Count what each tier of a bundle matches, right now, with no waiting.
+    """Count how many elements each tier of a bundle matches right now, without waiting.
 
-    Deliberately not `resolve`. Resolve waits, and raises on the first tier that is ambiguous,
-    so it can never tell you what the other tiers would have done. For a post mortem the
-    interesting fact is usually the whole row: primary matched 0, first fallback matched 3.
+    Not `resolve`, which waits and raises on the first ambiguous tier, so it never shows what
+    the other tiers would have matched. For a failure report you want all of them: primary
+    matched 0, first fallback matched 3.
     """
     probes: list[TierProbe] = []
     if bundle is None:
@@ -72,7 +70,7 @@ def probe_bundle(surface: Any, bundle: Any) -> list[TierProbe]:
     try:
         return list(prober(bundle))
     except Exception:  # noqa: BLE001
-        # A post mortem must never raise on top of the failure it is describing.
+        # Writing up a failure must never raise on top of the failure itself.
         return [
             TierProbe(tier_index=index, strategy=spec.strategy, note="probe failed")
             for index, spec in enumerate([bundle.primary, *bundle.fallbacks])
@@ -87,11 +85,10 @@ def write_failure_artifacts(
     step: Any = None,
     on_error: Any = None,
 ) -> None:
-    """Write failure/ for any result that is not success. Used by replay and by discovery.
+    """Write failure/ for any result that is not a success. Used by replay and discovery.
 
-    One function so the two subsystems cannot drift into producing different post mortems.
-    Everything it needs is duck typed, because discovery has no Capability and no Step and
-    should not have to invent one to be described.
+    One function so the two cannot drift apart. Arguments are duck-typed because discovery has
+    no Capability or Step and should not have to make one up.
     """
     if sink is None or getattr(result, "kind", None) == "success":
         return
@@ -114,7 +111,7 @@ def write_failure_artifacts(
         if step is not None and getattr(step, "target", None) is not None:
             probes = probe_bundle(surface, step.target)
     except Exception:  # noqa: BLE001
-        # A post mortem must never raise on top of the failure it is describing.
+        # Writing up a failure must never raise on top of the failure itself.
         if on_error is not None:
             on_error()
 

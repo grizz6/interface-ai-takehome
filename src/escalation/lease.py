@@ -1,9 +1,8 @@
-"""Who is allowed to touch the browser, as a file two processes can both read.
+"""Who is allowed to touch the browser, kept in a file both processes can read.
 
-The lease is the whole of the concurrency design. Automation and the operator console run in
-separate processes and share exactly one mutable fact: which of them is driving. That fact is
-a small JSON file, written atomically, polled by both sides. See DECISIONS.md 0029 for why a
-file and not a queue or a socket.
+The run and the operator page are separate processes, and the only thing they share is who is
+driving. That lives in a small JSON file, written atomically and polled by both. DECISIONS.md
+0029 explains why a file and not a queue or socket.
 """
 from __future__ import annotations
 
@@ -19,9 +18,8 @@ from src.models.common import Holder, LeaseState
 
 STRICT: Final[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
 
-# The transition table is the rule. There is no second place that decides what is legal, and
-# no branch anywhere else that special cases a state, so reading this tuple tells you the
-# entire protocol.
+# The allowed state changes. Nothing else decides what is legal, so this is the whole
+# protocol.
 _ALLOWED: Final[frozenset[tuple[LeaseState, LeaseState]]] = frozenset(
     [
         (LeaseState.RUNNING, LeaseState.PAUSED),
@@ -29,14 +27,12 @@ _ALLOWED: Final[frozenset[tuple[LeaseState, LeaseState]]] = frozenset(
         (LeaseState.HUMAN_CONTROL, LeaseState.RESUMING),
         (LeaseState.RESUMING, LeaseState.RUNNING),
     ]
-    # Anything may be abandoned. Expanded here rather than special cased at the check, so the
-    # table stays the single source of truth.
+    # Any state can be closed. Listed here rather than special-cased in the check.
     + [(state, LeaseState.CLOSED) for state in LeaseState]
 )
 
-# Who holds the browser in each state. Derived rather than stored, because a lease carrying
-# both a state and an independently settable holder can express "paused but automation is
-# driving", which is the exact bug this file exists to prevent.
+# Who holds the browser in each state. Worked out from the state rather than stored, so a
+# lease can never say "paused but automation is driving".
 _HOLDER_FOR: Final[dict[LeaseState, Holder]] = {
     LeaseState.RUNNING: Holder.AUTOMATION,
     LeaseState.PAUSED: Holder.NONE,
@@ -47,7 +43,7 @@ _HOLDER_FOR: Final[dict[LeaseState, Holder]] = {
 
 
 class IllegalTransition(Exception):
-    """An attempt to move the lease somewhere the protocol does not allow."""
+    """Tried to move the lease to a state that is not allowed from here."""
 
     def __init__(self, current: LeaseState, requested: LeaseState) -> None:
         self.current = current
@@ -72,7 +68,7 @@ class ControlLost(Exception):
 
 
 class ControlLease(BaseModel):
-    """A snapshot of who is in control. Immutable; transitions produce a new one."""
+    """Who is in control at one moment. Frozen; each change makes a new one."""
 
     model_config = STRICT
 
@@ -99,7 +95,7 @@ class ControlLease(BaseModel):
         intervention_id: str | None = None,
         deadline_at: datetime | None = None,
     ) -> ControlLease:
-        """The only way to change a lease. Raises rather than clamping to something legal."""
+        """The only way to change a lease. Raises if the change is not allowed."""
         if (self.state, state) not in _ALLOWED:
             raise IllegalTransition(self.state, state)
         return ControlLease(
@@ -122,12 +118,11 @@ class ControlLease(BaseModel):
 
 
 class LeaseStore:
-    """The file. Reads are cheap and unlocked; writes are atomic.
+    """The lease file. Reads are unlocked and writes are atomic.
 
-    No locking, deliberately. The protocol has exactly one legal writer per state, so two
-    processes never contend for the same transition: automation owns running and resuming,
-    the operator owns paused and human_control. A lock would protect against a case the
-    transition table already makes illegal.
+    No lock is needed, because each state has only one side allowed to write it: the run owns
+    running and resuming, and the operator owns paused and human_control. The two never
+    compete for the same change.
     """
 
     def __init__(self, path: Path | str) -> None:
@@ -141,11 +136,10 @@ class LeaseStore:
         return ControlLease.model_validate_json(self.path.read_text())
 
     def write(self, lease: ControlLease) -> ControlLease:
-        """Write to a temp file in the same directory, fsync, then rename over the target.
+        """Write to a temp file in the same folder, fsync, then rename it over the lease.
 
-        Same directory is not incidental: os.replace is only atomic within one filesystem, so
-        a temp file in /tmp would silently degrade to a copy and a reader could observe a
-        half written lease.
+        It has to be the same folder: os.replace is only atomic within one filesystem, so a temp
+        file in /tmp would become a copy and a reader could see a half-written lease.
         """
         handle = tempfile.NamedTemporaryFile(
             mode="w", dir=self.path.parent, prefix=".lease-", suffix=".tmp", delete=False
@@ -175,12 +169,11 @@ class LeaseStore:
 
 
 class InProcessLease:
-    """A LeaseStore-shaped object backed by memory, for a run with no operator attached.
+    """An in-memory lease for a run with no operator attached.
 
-    Invariant 10 says there is no unleased surface. Rather than making the assertion optional,
-    a surface built without a store gets this: a lease that starts held by automation and
-    honours the same transition table. The assertion then runs everywhere, on every code path,
-    including every test, which is the only way the invariant is worth anything.
+    Every surface needs a lease. A surface created without a lease file gets this one, which
+    starts held by automation and follows the same rules. That way the control check always
+    runs, including in every test, instead of being optional.
     """
 
     def __init__(self, session_id: str = "in-process") -> None:

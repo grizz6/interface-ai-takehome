@@ -1,7 +1,7 @@
-"""The one writer. Discovery, replay and escalation all go through it.
+"""The evidence writer. Discovery, replay and handoffs all use it.
 
-A run directory has the same shape whichever subsystem produced it, because a reviewer should
-not have to learn two layouts, and because a tool that reads one can read all of them.
+Every run folder has the same layout whatever produced it, so there is only one layout to
+learn and anything that reads one folder can read them all.
 
     evidence/<run_id>/
         meta.json          what produced this run: commit, policy hash, params by name
@@ -15,13 +15,11 @@ not have to learn two layouts, and because a tool that reads one can read all of
             screenshot.png
             context.json
 
-Every text write goes through `Redactor.redact` on the SERIALIZED string rather than on the
-object. Redacting at the boundary means a sensitive value cannot slip through in a field
-nobody thought about, which is the failure mode of redacting per call site.
+Every text write is serialised first and then passed through `Redactor.redact`, so a sensitive
+value cannot slip out in some field nobody thought to redact.
 
-SCREENSHOTS are the one thing the redactor cannot read, so they are handled upstream: the
-surface masks pii bound fields at capture time with Playwright's own masking. That is best
-effort and its limits are stated in DECISIONS.md 0037 and REPORT.md section 6.
+Screenshots are bytes the redactor cannot read, so the surface blacks out pii fields when it
+takes them, using Playwright's masking. That does not catch everything; see DECISIONS.md 0037.
 """
 from __future__ import annotations
 
@@ -40,13 +38,13 @@ EVIDENCE_ROOT = Path("evidence")
 
 
 def new_run_id(now: datetime | None = None) -> str:
-    """YYYYMMDD-HHMMSS-xxxx. Sorts chronologically, and the suffix survives a same-second collision."""
+    """YYYYMMDD-HHMMSS-xxxx. Sorts by time, and the suffix keeps same-second runs apart."""
     stamp = (now or datetime.now(UTC)).strftime("%Y%m%d-%H%M%S")
     return f"{stamp}-{secrets.token_hex(2)}"
 
 
 class EvidenceWriter:
-    """One run's evidence directory."""
+    """One run's evidence folder."""
 
     def __init__(
         self,
@@ -63,8 +61,7 @@ class EvidenceWriter:
         self.screenshots.mkdir(parents=True, exist_ok=True)
         self._log = self.directory / "run.jsonl"
         self._shots = 0
-        # A run always has metadata, even one that never calls start_meta, so a directory is
-        # never missing the file that says which code produced it.
+        # Always write metadata, so every folder says which code produced it.
         self.meta = meta or RunMeta.start(run_id, "replay")
         self._write_meta()
 
@@ -83,9 +80,9 @@ class EvidenceWriter:
     def failure_dir(self) -> Path:
         return self.directory / "failure"
 
-    # -- the redaction seam --------------------------------------------------
+    # -- writing with redaction ----------------------------------------------
     def _write_text(self, path: Path, payload: Any) -> None:
-        """Serialize, redact the serialized form, then write. Never the other way round."""
+        """Serialise, redact the text, then write. Always in that order."""
         raw = json.dumps(payload, indent=2, sort_keys=True, default=str)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(self._redactor.redact(raw) + "\n")
@@ -105,7 +102,7 @@ class EvidenceWriter:
             handle.write(self._redactor.redact(line) + "\n")
 
     def screenshot(self, png: bytes) -> Path:
-        """Bytes, unredactable. Masking happens at capture time in the surface."""
+        """Raw bytes, which cannot be redacted. The surface masks fields when capturing."""
         path = self.screenshots / f"{self._shots:03d}.png"
         path.write_bytes(png)
         self._shots += 1
@@ -128,12 +125,11 @@ class EvidenceWriter:
 
     # -- the end of the run --------------------------------------------------
     def write_transcript(self, transcript: Any) -> Path:
-        """transcript.json, and the events it holds flushed into run.jsonl.
+        """Write transcript.json, and copy its events into run.jsonl.
 
-        Discovery accumulates its events on the transcript rather than emitting them as it
-        goes, so without this a discovery directory has no run.jsonl at all. It used to be
-        the CLI that remembered to loop over them, which meant the directory shape depended
-        on the caller rather than on the writer. It does not any more.
+        Discovery keeps its events on the transcript instead of writing them as it goes, so
+        without this a discovery folder has no run.jsonl. The CLI used to do the copying,
+        which meant the folder layout depended on who called it. See DECISIONS.md 0039.
         """
         path = self.directory / "transcript.json"
         self._write_text(path, json.loads(transcript.model_dump_json()))
@@ -165,11 +161,11 @@ class EvidenceWriter:
         aria: str | None = None,
         png: bytes | None = None,
     ) -> Path:
-        """The three raw artifacts and the one that explains them.
+        """The three raw files, plus context.json, which explains them.
 
-        Each piece is optional because a surface that has already fallen over cannot always
-        produce all three, and a partial post mortem beats none. What is never optional is
-        context.json, which is the only one that says why.
+        The raw files are optional, because a browser that has already crashed may not be able
+        to produce them, and some is better than none. context.json is always written, since
+        it is the only one that says why.
         """
         target = self.failure_dir
         target.mkdir(parents=True, exist_ok=True)

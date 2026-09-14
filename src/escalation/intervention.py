@@ -1,13 +1,11 @@
-"""What a human is handed when automation stops, and what they hand back.
+"""What a person is given when the run stops, and what they give back.
 
-Section 3.6 asks for enough context to act on. That is five things: which capability, which
-step, what state the surface is in, why it stopped, and what it was working with. All five are
-fields here rather than prose in a log, so the operator console can render them and a test can
-assert they are present.
+Section 3.6 of the brief asks for enough context to act on: which capability, which step, what
+the screen looks like, why it stopped, and what inputs it had. Each is a field here rather than
+text in a log, so the operator page can show them and tests can check them.
 
-Nothing in this module ever sees a parameter value. `params_redacted` is built from the
-capability's declared inputs, not from the params dict, so invariant 6 holds structurally: the
-code path that would leak a value does not exist.
+Nothing here ever sees a parameter value. `params_redacted` is built from the capability's
+declared inputs, not the values passed in, so there is no way for a value to get in.
 """
 from __future__ import annotations
 
@@ -27,11 +25,10 @@ STRICT: Final[ConfigDict] = ConfigDict(extra="forbid", frozen=True)
 
 
 class CapturedAction(BaseModel):
-    """One thing the human did, recorded by identity and never by content.
+    """One thing the person did: which element, never what they typed.
 
-    A typed value in a back office banking console is an account number, a dollar amount or a
-    member's name. Invariant 6 does not stop applying because a person typed it rather than a
-    model, so the recorder stores which field changed and never what went into it.
+    In a banking back office, a typed value is an account number, an amount or a name. That is
+    just as sensitive when a person types it, so only the field is recorded.
     """
 
     model_config = STRICT
@@ -59,7 +56,7 @@ class InterventionResolution(BaseModel):
 
 
 class InterventionRequest(BaseModel):
-    """The handoff packet. One JSON file per intervention, under interventions/."""
+    """The handoff request. One JSON file per request, in interventions/."""
 
     model_config = STRICT
 
@@ -89,12 +86,11 @@ class InterventionRequest(BaseModel):
 
 
 def refuse_unsafe_outcome(risk: RiskClass, outcome: ResolutionOutcome) -> str | None:
-    """The safety rule, in one function so both the console and the engine call the same code.
+    """Refuse retry_step on an irreversible step. Used by the operator page and the engine.
 
-    A human who has been inside the session may already have performed the step. Re-performing
-    an irreversible action opens the account twice, and no note in a text box makes that
-    recoverable. The console hides the option; this refuses it even when the option is not
-    what produced the request. See DECISIONS.md 0032.
+    A person who had the browser may already have done the step, and doing an irreversible
+    action again could open the account twice. The operator page hides the option, and this
+    refuses it anyway in case the answer came from somewhere else. See DECISIONS.md 0032.
     """
     if risk is RiskClass.RISKY_IRREVERSIBLE and outcome is ResolutionOutcome.RETRY_STEP:
         return (
@@ -106,7 +102,7 @@ def refuse_unsafe_outcome(risk: RiskClass, outcome: ResolutionOutcome) -> str | 
 
 
 class InterventionStore:
-    """The interventions/ directory. One file per request, rewritten when resolved."""
+    """The interventions/ folder. One file per request, rewritten when it is resolved."""
 
     def __init__(self, root: Path | str) -> None:
         self.root = Path(root)
@@ -116,7 +112,7 @@ class InterventionStore:
         return self.root / f"{intervention_id}.json"
 
     def write(self, request: InterventionRequest) -> Path:
-        """Atomic, for the same reason the lease is: the console may be reading it."""
+        """Written atomically, like the lease, since the operator page may be reading it."""
         path = self.path_for(request.id)
         handle = tempfile.NamedTemporaryFile(
             mode="w", dir=self.root, prefix=".int-", suffix=".tmp", delete=False
@@ -140,11 +136,9 @@ class InterventionStore:
     def resolve(
         self, intervention_id: str, resolution: InterventionResolution
     ) -> InterventionRequest:
-        """Rewrite the file with the resolution attached.
+        """Rewrite the file with the resolution added.
 
-        Rewritten rather than appended as a second JSON document, so the file stays something
-        json.load can read. An intervention record that needs a custom parser is a record
-        nobody will look at during an incident.
+        Rewritten, not appended, so the file stays plain JSON that json.load can read.
         """
         request = self.read(intervention_id)
         updated = request.model_copy(update={"resolution": resolution})
@@ -158,8 +152,8 @@ class InterventionStore:
             try:
                 request = InterventionRequest.model_validate_json(path.read_text())
             except (ValueError, OSError):
-                # A half written or hand mangled file must not take the console down. It is
-                # skipped and stays on disk for a human to look at.
+                # A broken file should not take the operator page down. Skip it and leave it
+                # on disk for someone to look at.
                 continue
             if request.resolution is None:
                 found.append(request)
@@ -176,18 +170,17 @@ class InterventionStore:
 
 
 def new_intervention_id(run_id: str, step_index: int, reason: StuckReason) -> str:
-    """Readable in a directory listing: which run, which step, what went wrong."""
+    """An id you can read in a file listing: which run, which step, what went wrong."""
     stamp = datetime.now(UTC).strftime("%H%M%S")
     return f"{run_id}-s{step_index}-{reason.value}-{stamp}"
 
 
 def load_actions(raw: object) -> list[CapturedAction]:
-    """Parse what came back from the injected page recorder, defensively.
+    """Parse what the page recorder sent back, carefully.
 
-    This is the one place untrusted shaped data enters the model layer: the array is read out
-    of a page that a human has been driving. Anything that does not parse is dropped rather
-    than failing the resume, because losing a line of the audit trail is better than losing
-    the session.
+    This data comes from a page a person has been using, so it cannot be trusted. Anything that
+    does not parse is dropped instead of failing the resume, because losing one audit line is
+    better than losing the session.
     """
     if isinstance(raw, str):
         try:

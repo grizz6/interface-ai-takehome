@@ -1,14 +1,11 @@
-"""The minimal operator console.
+"""The operator page.
 
-Deliberately minimal, and the cut is the design rather than a shortcut. There is no live
-session streaming, no co-browsing, no VNC. The headed Chromium window that automation is
-already driving IS the live session: the operator works in that window with their own mouse
-and keyboard, and this console exists only to move the lease and to record what they decided.
-See DECISIONS.md 0030.
+It is basic on purpose. There is no screen streaming, co-browsing or VNC. The Chromium window
+the run opened is the live session, and the operator works in it with their own mouse and
+keyboard. This page only moves the lease and records what they decided. See DECISIONS.md 0030.
 
-Everything here talks to two directories and nothing else. It holds no browser handle, opens
-no page, and shares no memory with the run. That is what makes the transfer model real rather
-than a demo: the two sides agree on a file, and either can be restarted.
+It only reads and writes two folders. It has no browser handle and shares no memory with the
+run, so the two sides only have to agree on a file, and either one can be restarted.
 """
 from __future__ import annotations
 

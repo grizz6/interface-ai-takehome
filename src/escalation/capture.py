@@ -1,16 +1,14 @@
-"""The recorder installed into the page before a human takes over.
+"""A small script put into the page before a person takes over, to record what they do.
 
-Injected twice on purpose: `add_init_script` so it survives every navigation the operator
-makes, and `evaluate` so it is also live in the document that is already loaded. Without the
-second, nothing on the current screen is recorded, which is usually the screen that matters.
+It is added twice: with `add_init_script` so it survives every page the operator visits, and
+with `evaluate` so it also runs on the page already open. Without the second, nothing on the
+current screen is recorded, and that is usually the one that matters.
 
-The array lives in sessionStorage rather than on `window`, because `window` is destroyed on
-navigation and a handoff that involves clicking through three screens would keep only the
-last. sessionStorage is per tab and per origin, which is exactly the scope of one handoff.
+Actions are stored in sessionStorage, not on `window`, because `window` is wiped on every
+navigation and a handoff across three pages would only keep the last one.
 
-WHAT IS DELIBERATELY NOT RECORDED: the value of anything typed. A change event carries the
-new value and this script drops it on the floor, keeping only which field changed. Invariant 6
-applies to a person's keystrokes exactly as it applies to a model's. See DECISIONS.md 0033.
+It never records what was typed. A change event carries the new value, and this script ignores
+it and only keeps which field changed. See DECISIONS.md 0033.
 """
 from __future__ import annotations
 
@@ -33,10 +31,10 @@ RECORDER_JS: Final[str] = """
       const all = read();
       all.push(Object.assign({ at: new Date().toISOString() }, entry));
       sessionStorage.setItem(KEY, JSON.stringify(all.slice(-200)));
-    } catch (e) { /* a full or blocked store must not break the page a human is using */ }
+    } catch (e) { /* never break the page the person is using */ }
   };
 
-  // Field identity, never field content. name, then id, then the label text beside it.
+  // Which field, never what is in it: name, then id, then aria-label.
   const identify = (el) => {
     if (!el) return null;
     return el.getAttribute("name") || el.id || (el.getAttribute("aria-label") || null);
@@ -57,8 +55,8 @@ RECORDER_JS: Final[str] = """
     });
   }, true);
 
-  // 'change' and not 'input': one entry per field the human finished with, rather than one
-  // per keystroke. The value is read nowhere in this handler.
+  // 'change' rather than 'input', so there is one entry per field, not one per keystroke.
+  // The value is never read here.
   document.addEventListener("change", (ev) => {
     const el = ev.target;
     if (!el || !("tagName" in el)) return;
@@ -86,7 +84,7 @@ CLEAR_JS: Final[str] = """
 
 
 def install(page: Any) -> None:
-    """Arm the recorder for every future document and for the one already loaded."""
+    """Install the recorder on the current page and every page after it."""
     page.add_init_script(RECORDER_JS)
     page.evaluate(RECORDER_JS)
 
@@ -97,8 +95,8 @@ def drain(page: Any) -> Any:
         captured = page.evaluate(READ_JS)
         page.evaluate(CLEAR_JS)
     except Exception:  # noqa: BLE001
-        # The recorder can be lost: a cross origin navigation, a page that clears storage, an
-        # operator who closed the tab. The before and after aria snapshots are the fallback
-        # evidence, which is exactly why they are captured separately.
+        # The recorder can get lost: navigating to another origin, a page clearing storage,
+        # or the operator closing the tab. The before and after snapshots are kept separately
+        # for that reason.
         return []
     return captured

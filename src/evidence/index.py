@@ -1,11 +1,11 @@
-"""Summarize a directory of runs as one table.
+"""Summarise a folder of runs as one table.
 
-The point is that a reviewer should be able to see what is in `evidence/` without opening
-anything. One row per run, and the detail column carries the single fact that distinguishes
-this run from its neighbours: the outcome code, the failure class, the intervention id.
+So you can see what is in `evidence/` without opening anything. One row per run, and the detail
+column has the one thing that sets the run apart: the outcome code, the failure class, or the
+intervention id.
 
-Reads meta.json where it exists and falls back to result.json, so a directory written before
-meta.json existed still appears rather than silently vanishing from its own index.
+Reads meta.json if it is there and falls back to result.json, so older folders without
+meta.json still show up.
 """
 from __future__ import annotations
 
@@ -76,13 +76,11 @@ def _duration(meta: dict[str, Any], result: dict[str, Any]) -> int | None:
 
 
 def collect(root: Path | str) -> list[Row]:
-    """One Row per run directory under root, in name order.
+    """One Row per run folder under root, sorted by name.
 
-    The row is labelled by the DIRECTORY name, not by meta.json's run_id. In `evidence/` the
-    two are the same. In a curated set they are not: the directories are renamed to say what
-    each run demonstrates, and a table of raw run ids there tells a reader nothing about which
-    row to open. Name order rather than newest first for the same reason, since a curated set
-    is numbered in the order it should be read.
+    Rows use the folder name, not meta.json's run_id. In `evidence/` they are the same, but the
+    sample runs are renamed to say what each one shows, and raw run ids would not help anyone
+    pick a row. Sorted by name because the sample runs are numbered in reading order.
     """
     rows: list[Row] = []
     base = Path(root)
@@ -109,7 +107,7 @@ def collect(root: Path | str) -> list[Row]:
 
 
 def render(rows: list[Row]) -> str:
-    """A Markdown table. Deliberately not a report: the runs speak for themselves."""
+    """A Markdown table of the rows."""
     lines = [
         "| run | kind | result | exit | duration | detail |",
         "| --- | --- | --- | --- | --- | --- |",

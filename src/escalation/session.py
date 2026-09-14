@@ -1,8 +1,7 @@
-"""The live session: one browser context, one lease, and the handoff protocol around it.
+"""The live session: one browser context, one lease, and the handoff around them.
 
-Invariant 7 says one browser context per run, and this is the module that has to mean it.
-Escalation, human control and resume all happen on the same context that discovery or replay
-was already using. Nothing here opens a page, and nothing here recreates one.
+Handing over, the person's turn and resuming all happen in the same browser context discovery
+or replay was already using. Nothing here opens a new page or recreates one.
 """
 from __future__ import annotations
 
@@ -31,9 +30,9 @@ DEFAULT_DEADLINE_SECONDS: Final[int] = 900
 class EscalationContext:
     """What the caller knows about why it stopped.
 
-    Carries identity fields rather than a Capability, because discovery escalates too and
-    discovery has no capability yet: that is the artifact it is in the middle of earning. The
-    engine builds one with `from_capability`; the loop builds one with what it knows.
+    Takes plain fields instead of a Capability, because discovery can ask for help too and has
+    no capability yet. Replay builds one with `from_capability`, and discovery fills in what it
+    knows.
     """
 
     def __init__(
@@ -85,7 +84,7 @@ class EscalationContext:
 
 
 class Session:
-    """Owns the lease, and is the only thing allowed to move it on the automation side."""
+    """Owns the lease, and is the only thing on the automation side that changes it."""
 
     def __init__(
         self,
@@ -98,9 +97,8 @@ class Session:
         deadline_seconds: int = DEFAULT_DEADLINE_SECONDS,
         redactor: Any = None,
     ) -> None:
-        # An intervention file carries two aria snapshots of a real back office screen, so it
-        # is on the same footing as evidence and gets the same treatment. Without this,
-        # invariant 6 would hold for evidence/ and quietly not hold for interventions/.
+        # An intervention file holds two snapshots of a real screen, so it needs the same
+        # redaction as evidence. Otherwise interventions/ would leak what evidence/ hides.
         self.redactor = redactor
         self.surface = surface
         self.session_id = session_id
@@ -112,12 +110,11 @@ class Session:
         )
         if not (isinstance(self.lease, InProcessLease) or self.lease.exists()):
             self.lease.write(ControlLease.start(session_id))
-        # The surface asserts against this same store from now on, so invariant 10 is one
-        # object rather than two that have to agree.
+        # The surface checks this same lease from now on, so there is only one to keep right.
         if hasattr(surface, "attach_lease"):
             surface.attach_lease(self.lease)
-        # Captured at escalate, compared after the handoff. Kept even when the injected
-        # recorder is lost, which is the point of having them.
+        # Taken when handing over and compared afterwards. Still there if the page recorder
+        # gets lost.
         self._before_url: str | None = None
         self._before_aria: str | None = None
 
@@ -125,13 +122,12 @@ class Session:
         return str(self.redactor.redact(text)) if self.redactor is not None else text
 
     def _redact_actions(self, actions: list[CapturedAction]) -> list[CapturedAction]:
-        """Redact the SERIALIZED action, then reparse, so no field can be missed.
+        """Redact the whole serialised action and parse it back, so no field is missed.
 
-        A captured action carries a url and the visible text of what was clicked, and both can
-        hold a value: /member/100001/subaccount is a member id in a path, and a link labelled
-        with an account number is an account number. Redacting named fields would mean
-        remembering to add each new one, which is exactly the failure this seam exists to
-        prevent. Found by the phase 9 sweep, which caught the url field doing precisely that.
+        An action has a URL and the text of what was clicked, and both can hold a value:
+        /member/100001/subaccount has a member id in it. Redacting named fields means
+        remembering every new field, and forgetting the url field is exactly the leak the
+        secret scan found. See DECISIONS.md 0041.
         """
         if self.redactor is None:
             return actions
@@ -144,7 +140,7 @@ class Session:
                     )
                 )
             except ValueError:
-                # Redaction must never lose an audit entry. Keep the identity, drop the text.
+                # Do not lose the audit entry. Keep the kind and tag, drop the rest.
                 cleaned.append(CapturedAction(kind=action.kind, tag=action.tag))
         return cleaned
 
@@ -159,11 +155,11 @@ class Session:
 
     # -- handing over --------------------------------------------------------
     def escalate(self, reason: StuckReason, context: EscalationContext) -> str:
-        """Capture the state, write the request, arm the recorder, then pause.
+        """Capture the screen, write the request, install the recorder, then pause.
 
-        Order matters. Everything that needs the browser happens while automation still holds
-        the lease, and the pause is the last thing, so there is no window in which the lease
-        says paused but automation is still driving.
+        The order matters. Everything that uses the browser happens while automation still
+        holds the lease, and pausing comes last, so the lease never says paused while
+        automation is still driving.
         """
         observation = self.surface.observe()
         screenshot_path: str | None = None
@@ -193,15 +189,15 @@ class Session:
         )
         self.store.write(request)
 
-        # Armed before the handoff, not on take. The console is a separate process with no
-        # handle on this page, so installation has to happen on this side of the boundary.
+        # Installed now, not when the operator clicks Take control, because the operator page
+        # is a separate process with no access to this browser.
         self._before_url = observation.url
         self._before_aria = observation.aria_yaml
         try:
             capture.install(self.surface.page)
         except Exception:  # noqa: BLE001
-            # A page that refuses the injection still hands over. The before and after
-            # snapshots remain, and the resolution simply carries no action list.
+            # If the script cannot be added, still hand over. The before and after snapshots
+            # are still captured, just without a list of actions.
             pass
 
         self.lease.transition(
@@ -216,10 +212,10 @@ class Session:
         poll_interval: float = DEFAULT_POLL_SECONDS,
         deadline: datetime | None = None,
     ) -> InterventionResolution | None:
-        """Block until the operator gives the lease back, or until the deadline passes.
+        """Wait until the operator gives control back or the deadline passes.
 
-        Returns None on expiry, having closed the session. A caller that gets None is not
-        allowed to carry on: nobody answered, so nobody authorized anything.
+        Returns None on expiry, after closing the session. A caller that gets None must not
+        carry on: nobody answered, so nothing was approved.
         """
         limit = deadline or (datetime.now(UTC) + timedelta(seconds=self.deadline_seconds))
         while True:
@@ -227,9 +223,8 @@ class Session:
             if lease.state is LeaseState.RESUMING:
                 return self._collect_resolution(intervention_id)
             if lease.state is LeaseState.CLOSED:
-                # An aborted handoff still has to record what the human did. Losing the audit
-                # trail because the answer was "stop" is the wrong way round: that is the case
-                # where somebody will most want to know what happened in the session.
+                # Still record what the person did when they abort. That is when someone is
+                # most likely to want to know what happened.
                 self._collect_resolution(intervention_id)
                 return None
             if datetime.now(UTC) >= limit:
@@ -238,10 +233,10 @@ class Session:
             time.sleep(poll_interval)
 
     def _collect_resolution(self, intervention_id: str) -> InterventionResolution | None:
-        """Read what the operator wrote, and add what the page itself observed.
+        """Read the operator's answer and add what was recorded from the page.
 
-        The operator's note is a claim. The captured actions and the after snapshot are
-        evidence. Both go on the record; only the second is trusted by resume.
+        The note is what the operator says happened. The recorded actions and the after
+        snapshot show what did. Both are saved, but resuming only trusts the page.
         """
         request = self.store.read(intervention_id)
         resolution = request.resolution
@@ -271,7 +266,7 @@ class Session:
 
     # -- taking it back ------------------------------------------------------
     def resume(self) -> ControlLease:
-        """resuming -> running. Called once the caller has re-verified the surface."""
+        """resuming -> running. Called after the caller has checked the page again."""
         return self.lease.transition(LeaseState.RUNNING)
 
     @property
