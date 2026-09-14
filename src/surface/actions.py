@@ -1,8 +1,7 @@
-"""Typed action requests and their outcome.
+"""Typed action requests and what happened when they ran.
 
-An action names a control by LocatorBundle, never by ref. That is not a convenience: it is
-what lets the same action object be produced by the discovery loop and consumed by replay,
-and it is design rule 9 expressed in the type system.
+An action names a control by LocatorBundle, never by snapshot ref. That way discovery and
+replay use the same action objects, and a ref has no field to sneak into.
 """
 from __future__ import annotations
 
@@ -63,9 +62,9 @@ Action = Annotated[
 class ActionOutcome(BaseModel):
     """What happened when an action ran.
 
-    `resolved_strategy` is the telemetry design rules section 6 asks for: a flow that quietly
-    slides from role_name to css_fallback over successive runs has drifted, and that is
-    invisible unless the winning tier is recorded every time.
+    `resolved_strategy` records which tier found the control. A flow that slides from
+    role_name to css_fallback over many runs means the app has changed, and you can only see
+    that if every run records it.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)

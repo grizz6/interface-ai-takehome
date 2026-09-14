@@ -13,11 +13,10 @@ an assumed format. Everything it handles was observed in one of them:
     - option "Savings" [selected] [box=0,0,0,0]    no ref at all
     - /url: /search                                a property of the element above
 
-Two things follow from the captures and shape everything downstream. Refs carry a frame
-prefix (e17 in the main frame, f1e36 inside the first iframe) and are reassigned on every
-snapshot, which is invariant 9 in concrete form. And some real controls appear only as bare
-text nodes, because a span with an onclick handler has no ARIA role at all; those can never
-produce a role based locator, which is the honest reason tier 4 exists.
+Two things from the captures matter for everything else. Refs have a frame prefix (e17 in
+the main frame, f1e36 in the first iframe) and change on every snapshot, so they can never be
+saved. And some real controls show up only as plain text, because a span with an onclick has
+no ARIA role. Those can never get a role-based locator, which is why the text tier exists.
 """
 from __future__ import annotations
 
@@ -51,10 +50,10 @@ CONTAINER_ROLES = {"table", "group", "region", "form", "list"}
 
 
 class ObservedElement(BaseModel):
-    """One node of the accessibility tree as it was at a single moment.
+    """One node of the accessibility tree at one moment.
 
-    `ref` is a per-snapshot handle. It is a lookup key inside one turn and nothing else. It
-    must never reach a LocatorBundle or an artifact. See design rule 9.
+    `ref` only means something within this snapshot. Use it to look things up during one turn,
+    and never put it in a LocatorBundle or a saved capability.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -76,10 +75,10 @@ class ObservedElement(BaseModel):
 
 
 class Observation(BaseModel):
-    """A single perception of the surface.
+    """One look at the screen.
 
-    `aria_yaml` is what a model would be shown. `elements` is what the code reasons over.
-    Both come from one snapshot, so they cannot disagree.
+    `aria_yaml` is what the model sees and `elements` is what the code uses. Both come from
+    the same snapshot, so they always agree.
     """
 
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
@@ -131,10 +130,10 @@ class Observation(BaseModel):
         return out
 
     def nearest_heading(self, ref: str) -> tuple[ObservedElement, str] | None:
-        """The nearest enclosing container that a person could name by its visible heading.
+        """The closest surrounding container with a visible heading a person could name it by.
 
-        Nearest first, because the outermost table on any of these pages is the page chrome
-        and its first cell is the brand name, which names nothing useful.
+        Closest first, because the outermost table on these pages is the page frame, and its
+        first cell is the brand name, which is no use as a name.
         """
         for ancestor in self.ancestors_of(ref):
             if ancestor.role not in CONTAINER_ROLES:

@@ -1,12 +1,11 @@
 """Read one declared value off the live page.
 
-Lives in the surface rather than in discovery or replay because both need it and both need it
-to behave identically. A value that extracts during discovery and not during replay is the
-worst kind of bug: the capability was verified, approved, and is wrong.
+Discovery and replay both use this, and they have to read values the same way. A value that
+reads fine during discovery and not during replay would mean an approved capability that is
+quietly wrong.
 
-Parsing is deliberately strict. If an output is declared `currency` and the text on the page
-is not a number, this returns None rather than a string that will surprise the caller later.
-An output that cannot be parsed as what it claims to be has not been extracted.
+Parsing is strict. If an output is declared `currency` and the page text is not a number,
+this returns None instead of a string the caller is not expecting.
 """
 from __future__ import annotations
 

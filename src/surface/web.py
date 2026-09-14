@@ -1,15 +1,14 @@
-"""A web surface driven through Playwright, one browser context for its whole life.
+"""A web surface driven by Playwright, using one browser context for its whole life.
 
-Two things here carry the weight of the phase.
+The two methods that matter most:
 
-describe() converts a per-snapshot ref into a durable LocatorBundle while the observation is
-still fresh. It is the only place a ref is ever read, and nothing it returns contains one.
-That is design rule 9 implemented rather than merely promised.
+describe() turns a snapshot ref into a LocatorBundle while the snapshot is still current. It
+is the only place a ref is read, and nothing it returns contains one.
 
-resolve() tries each tier in order and stops the moment a tier matches more than one element.
-It never falls through to the next tier on ambiguity and never takes the first match, because
-"there are two Select buttons and I picked one" is how automation acts on the wrong account.
-That is invariant 4.
+resolve() tries each tier in order and stops as soon as a tier matches more than one element.
+It never moves on to the next tier when something is ambiguous and never takes the first
+match, because "there were two Select buttons and I picked one" is how you act on the wrong
+account.
 """
 from __future__ import annotations
 
@@ -42,8 +41,7 @@ from src.escalation.lease import ControlLost, InProcessLease
 from src.evidence.failure import TierProbe
 
 _APPROVAL_RULE = "risky_action_policy:require_approval"
-# Solid black rather than Playwright's default pink, so a masked region reads as removed
-# rather than as a rendering artifact.
+# Black instead of Playwright's default pink, so a masked area looks removed, not glitched.
 MASK_COLOR = "#000000"
 from src.surface.protocol import (
     ActionTimeout,
@@ -59,7 +57,7 @@ ROW_ROLES = {"row", "group"}
 
 
 class WebSurface:
-    """One browser context, one page, for the life of the surface. Invariant 7."""
+    """One browser context and one page for the life of the surface, never a fresh one."""
 
     def __init__(
         self,
@@ -71,10 +69,9 @@ class WebSurface:
         poll_ms: int = 100,
         nav_settle_ms: int = 500,
     ) -> None:
-        # The resolve budget is shared across a whole bundle rather than spent per tier.
-        # Every tier is tried once with no waiting first, so a bundle that resolves on its
-        # primary costs nothing, and a bundle that resolves on nothing costs the budget once
-        # rather than once per tier.
+        # The resolve timeout covers the whole bundle, not each tier. Every tier is tried once
+        # without waiting first, so a bundle that matches on its primary costs nothing, and one
+        # that matches nothing waits once rather than once per tier.
         self._resolve_timeout_ms = resolve_timeout_ms
         self._poll_ms = poll_ms
         self._nav_settle_ms = nav_settle_ms
@@ -85,22 +82,20 @@ class WebSurface:
         self._context = self._browser.new_context()
         self._page = self._context.new_page()
         self._last: Observation | None = None
-        # Invariant 10: there is no unleased surface. Without an operator attached this is an
-        # in-process lease that automation already holds, so the assertion below is
-        # unconditional on every path including every test.
+        # Every surface has a lease. With no operator attached it is an in-process lease that
+        # automation already holds, so the control check below runs on every path, tests too.
         self._lease: Any = InProcessLease()
         # Fields holding a pii or secret value, blacked out of every screenshot this surface
         # takes. Empty until a run declares them.
         self._mask_bundles: list[Any] = []
-        # The application answering with a 500 is a different thing from a checkpoint that
-        # did not hold, and only the transport knows which happened. Playwright renders an
-        # error page like any other, so without this the two are indistinguishable.
+        # A 500 from the app is not the same as a check that failed, and only the HTTP status
+        # tells them apart. Playwright renders an error page like any other page.
         self._last_status: int | None = None
         self._page.on("response", self._remember_status)
 
     @property
     def page(self) -> Any:
-        """The live page. For the operator handoff in phase 7, not for building locators."""
+        """The live page. For the operator handoff, not for building locators."""
         return self._page
 
     def attach_lease(self, lease: Any) -> None:
@@ -108,7 +103,7 @@ class WebSurface:
         self._lease = lease
 
     def assert_control(self) -> None:
-        """Invariant 10. Called before any Playwright call that acts or decides."""
+        """Raise unless automation holds the lease. Called before anything that acts or decides."""
         lease = self._lease.read()
         if not lease.automation_may_act:
             raise ControlLost(lease.state, lease.holder)
@@ -123,19 +118,19 @@ class WebSurface:
         return self._last_status
 
     def set_pii_masks(self, bundles: list[Any]) -> None:
-        """Bundles whose field holds a pii or secret value, to be blacked out in screenshots.
+        """Fields holding a pii or secret value, to be blacked out in screenshots.
 
-        Set once per run from the capability's declared inputs. See DECISIONS.md 0037 for why
-        this uses live geometry rather than the recorded geometry_hint.
+        Set once per run from the capability's declared inputs. DECISIONS.md 0037 explains why
+        this finds the field on the live page instead of using the saved geometry_hint.
         """
         self._mask_bundles = list(bundles)
 
     def _mask_locators(self) -> list[Any]:
-        """Build a locator per masked bundle, tolerating the ones that are not on this screen.
+        """Build a locator for each masked field, including ones not on this screen.
 
-        Playwright ignores a mask locator that matches nothing, so a field that belongs to a
-        different step costs nothing here. Built directly rather than resolved, because
-        resolve waits and raises, and neither is wanted while taking a picture.
+        Playwright ignores a mask that matches nothing, so fields from other steps cost
+        nothing. These are built, not resolved, because resolve waits and raises, and neither
+        is wanted while taking a screenshot.
         """
         locators: list[Any] = []
         for bundle in self._mask_bundles:
@@ -144,12 +139,12 @@ class WebSurface:
                 try:
                     locators.append(build(scope, spec).target)
                 except Exception:  # noqa: BLE001
-                    # A tier that cannot even be built is not worth failing a screenshot over.
+                    # Not worth failing a screenshot over a tier that cannot be built.
                     continue
         return locators
 
     def probe_tiers(self, bundle: LocatorBundle) -> list[TierProbe]:
-        """What each tier matches right now. For post mortems only, never for locating."""
+        """How many elements each tier matches right now. For failure reports only."""
         scope: Scope = frame_scope(self._page, bundle.frame_path)
         probes: list[TierProbe] = []
         for index, spec in enumerate([bundle.primary, *bundle.fallbacks]):
@@ -201,13 +196,12 @@ class WebSurface:
             raise SurfaceUnavailable("no observation yet; call observe() first")
         return self._last
 
-    # -- the core of the phase ----------------------------------------------
+    # -- describing ----------------------------------------------------------
     def describe(self, ref: str) -> LocatorBundle:
-        """Build a durable bundle for the element behind a per-snapshot ref.
+        """Build a locator bundle for the element behind a snapshot ref.
 
-        Tier order follows design rules section 6. Every tier that also resolves uniquely is
-        kept as a fallback, so a bundle carries genuine redundancy rather than one strategy
-        with an empty list beside it.
+        Tiers are tried best first. Every other tier that also matches exactly one element is
+        kept as a fallback, so the bundle has real backups.
         """
         observation = self._require_observation()
         element = observation.by_ref(ref)
@@ -232,10 +226,9 @@ class WebSurface:
 
         verified = self._verify(candidates, element.frame_path)
         if candidates and not verified:
-            # Every tier produced a candidate and not one of them matched on the live page.
-            # That is never a locator problem, it is a page problem: what is on screen is
-            # not what the observation described. Record both sides, because an escalation
-            # that cannot say what it saw is an escalation nobody can act on.
+            # Every tier produced a candidate and none matched the live page. That means the
+            # page is not what the snapshot showed, not that the locators are bad. Record both
+            # URLs so whoever picks this up can see what happened.
             counts = ", ".join(
                 f"{c.strategy}={self._live_count(c, element.frame_path)}" for c in candidates
             )
@@ -264,10 +257,9 @@ class WebSurface:
             )
 
         if isinstance(verified[0], CssFallbackLocator):
-            # Tiers 1 to 3 all failed and CSS is the only thing left, but LocatorBundle
-            # refuses a brittle primary. Both rules are deliberate and they collide here.
-            # Invariant 1 says code adapts to the schema, so this refuses to describe the
-            # element rather than quietly recording a flow that hangs off a DOM id.
+            # Only CSS worked, and LocatorBundle refuses a CSS primary. Rather than bend the
+            # schema, refuse to describe the element instead of saving a flow that depends on
+            # a generated DOM id.
             raise LocatorUnresolved(
                 f"{element.role!r} ref {ref!r} can only be located by CSS, and the schema "
                 "forbids a brittle primary. Not even its visible text resolves uniquely. "
@@ -356,10 +348,10 @@ class WebSurface:
     def _tier_text_relation(
         self, observation: Observation, element: Any, failures: list[str]
     ) -> list[LocatorSpec]:
-        """Visible text. The only tier that can see a control with no ARIA role.
+        """Visible text, the only tier that can find a control with no ARIA role.
 
-        Two candidates are offered, unscoped first. Verification keeps whichever resolves
-        uniquely, and describe() keeps only the first per strategy.
+        Offers two candidates, unscoped first. Verification keeps the ones that match exactly
+        one element, and describe() keeps the first of each strategy.
         """
         if not element.name:
             failures.append("tier 4 unavailable: element has no visible text")
@@ -384,7 +376,7 @@ class WebSurface:
     def _tier_css(
         self, element: Any, verified: list[LocatorSpec], failures: list[str]
     ) -> LocatorSpec | None:
-        """Last resort. Reads a DOM id, which is the one place raw DOM is permitted."""
+        """Last resort. Reads a DOM id, the only place raw DOM is used for locating."""
         scope = frame_scope(self._page, element.frame_path)
         probe: PWLocator | None = None
         if verified:
@@ -405,7 +397,7 @@ class WebSurface:
         )
 
     def _live_count(self, spec: LocatorSpec, frame_path: list[str]) -> int | str:
-        """How many elements a tier matches right now. For diagnostics, never for control."""
+        """How many elements a tier matches right now. For error messages only."""
         try:
             built = build(frame_scope(self._page, frame_path), spec)
             if built.guard is not None and built.guard.count() != 1:
@@ -417,12 +409,12 @@ class WebSurface:
     def _verify(
         self, specs: list[LocatorSpec], frame_path: list[str]
     ) -> list[LocatorSpec]:
-        """Every candidate that resolves to exactly one element, waiting if none do yet.
+        """Every candidate that matches exactly one element, waiting if none do yet.
 
-        Zero matches is not believed until the budget expires, because a tier that has not
-        rendered yet is indistinguishable from a tier that does not apply. More than one
-        match is simply not unique here; it is not an error, since that is exactly how
-        tier 1 gets rejected for a control whose name collides.
+        Zero matches is not believed until the timeout, because a control that has not
+        rendered yet looks the same as a tier that does not apply. More than one match just
+        means not unique. It is not an error here, since that is how tier 1 gets dropped for a
+        control whose name is shared.
         """
         if not specs:
             return []
@@ -442,22 +434,21 @@ class WebSurface:
 
     # -- resolution ----------------------------------------------------------
     def resolve(self, bundle: LocatorBundle) -> Resolved:
-        """Try each tier in order, waiting before believing that nothing matched.
+        """Try each tier in order, and wait before deciding nothing matched.
 
-        The asymmetry is deliberate and it is the whole point of this method.
+        Zero matches and two matches are handled differently.
 
-        Zero matches is not trusted immediately. A page that is still rendering reports zero
-        for a control that is about to exist, and treating that as "this tier does not apply"
-        turns transient slowness into an unresolved error or, worse, a silent slide down to a
-        lower tier. So every tier is retried until a shared budget expires.
+        Zero is not trusted straight away. A page that is still rendering shows zero for a
+        control that is about to appear, and treating that as "this tier does not apply" turns
+        a slow page into an error, or worse, a quiet slide down to a weaker tier. So every tier
+        is retried until the shared timeout runs out.
 
-        Two or more matches is never waited on and never falls through to a fallback. It is
-        ambiguity, it raises immediately, and invariant 4 says the run stops rather than
-        picking one. Waiting could only ever turn two matches into one by luck, and a
-        fallback that happens to work does not make the ambiguity safe.
+        Two or more is never waited on and never passed to a fallback. It is ambiguous, it
+        raises at once, and the run stops instead of picking one. Waiting could only turn two
+        into one by luck, and a fallback that happens to work does not make it safe.
         """
-        # Resolving drives the browser and decides what the run does next, so it is covered
-        # by invariant 10 exactly as acting is.
+        # Resolving drives the browser and decides what happens next, so it needs the lease
+        # just like acting does.
         self.assert_control()
 
         scope: Scope = frame_scope(self._page, bundle.frame_path)
@@ -481,8 +472,8 @@ class WebSurface:
                 count = built.target.count()
                 if count > 1:
                     raise LocatorAmbiguous(
-                        f"{spec.strategy} matched {count} elements. Invariant 4: the run "
-                        "stops and escalates rather than taking the first match."
+                        f"{spec.strategy} matched {count} elements. The run stops and asks "
+                        "for a person rather than taking the first match."
                     )
                 if count == 1:
                     return Resolved(
@@ -509,16 +500,14 @@ class WebSurface:
         risk: RiskClass | None = None,
         approved: bool = False,
     ) -> ActionOutcome:
-        # Control first, then policy. A surface call made while a human is driving is not a
-        # policy question, it is two drivers on one browser, and the gate cannot see it.
+        # Control first, then policy. Acting while a person is driving is not a policy question,
+        # it is two people on one browser, and the policy check cannot see that.
         self.assert_control()
 
         decision = self._gate.check(action, risk)
         if isinstance(decision, Blocked):
-            # A human approving a step has to be able to reach the surface, and the gate here
-            # is the enforcement point per invariant 3, so the approval has to arrive here
-            # rather than being consumed by a caller's own earlier check. It waives exactly
-            # one rule for exactly this call.
+            # This is where policy is enforced, so a person's approval has to be passed in here
+            # rather than handled by the caller. It skips one rule, for this call only.
             if not (approved and decision.rule.startswith(_APPROVAL_RULE)):
                 raise PolicyViolation(decision.rule, decision.reason)
 
@@ -556,13 +545,13 @@ class WebSurface:
         )
 
     def _assert_arrival(self, previous_url: str | None = None) -> None:
-        """Re-check the URL after anything that may have navigated.
+        """Check the URL again after anything that might have navigated.
 
-        Reading page.url straight after click() races the navigation: the click returns as
-        soon as the event is dispatched, so the URL can still be the one we came from and a
-        click onto a denied route would be checked against the allowed route it left. So the
-        load state is settled first, and when the URL has not moved yet we give it a bounded
-        window to before concluding that the click simply did not navigate.
+        Reading page.url right after click() can beat the navigation, since click returns as
+        soon as the event is sent. The URL could still be the old page, so a click onto a
+        denied route would be checked against the allowed page it came from. So wait for load
+        first, and if the URL has not changed, give it a short window before deciding the
+        click did not navigate.
         """
         self._page.wait_for_load_state("load")
         if previous_url is not None and self._page.url == previous_url:
@@ -589,7 +578,7 @@ class WebSurface:
     def _await_signal(self, signal: Signal, timeout_ms: int, poll_ms: int) -> None:
         deadline = time.monotonic() + timeout_ms / 1000
         while time.monotonic() < deadline:
-            # timeout 0: this loop is already the wait, so the inner check must not wait too
+            # timeout 0, because this loop is already doing the waiting
             if self._evaluate(signal, 0):
                 return
             self._page.wait_for_timeout(poll_ms)
@@ -599,7 +588,7 @@ class WebSurface:
 
     # -- evaluation ----------------------------------------------------------
     def evaluate(self, signal: Signal) -> bool:
-        """Public evaluation waits for an element to appear before reporting it absent."""
+        """Check a signal, waiting for an element to appear before calling it absent."""
         return self._evaluate(signal, self._resolve_timeout_ms)
 
     def _evaluate(self, signal: Signal, timeout_ms: int) -> bool:
@@ -629,10 +618,10 @@ class WebSurface:
         return needle.lower() in text.lower()
 
     def _element_present(self, signal: Signal, timeout_ms: int) -> bool:
-        """Wait for the element to appear before reporting it absent.
+        """Wait for the element to appear before calling it absent.
 
-        Ambiguity is not raised here: two matches still means present. The invariant 4 rule
-        about never guessing governs acting on an element, not observing that one exists.
+        Two matches still counts as present. The no-guessing rule is about acting on an
+        element, not about noticing that one exists.
         """
         bundle = signal.locator
         if bundle is None:

@@ -1,9 +1,8 @@
-"""The seam between perceiving a surface and the recorded flow.
+"""The interface between reading a screen and the saved flow.
 
-Nothing in these signatures is web specific. That is the whole point: a desktop surface
-driven through UI Automation or the AX API would implement the same six methods, because
-every one of them speaks in roles, accessible names and LocatorBundles rather than in pages,
-selectors or DOM nodes. design rules section 3.7 asks for that seam to be real, and this is it.
+Nothing here is web-specific. A desktop surface using UI Automation or the macOS
+accessibility API could implement the same six methods, because they all deal in roles,
+accessible names and LocatorBundles, never pages, selectors or DOM nodes.
 """
 from __future__ import annotations
 
@@ -28,9 +27,8 @@ class LocatorUnresolved(SurfaceError):
 class LocatorAmbiguous(SurfaceError):
     """A tier matched more than one element.
 
-    Raised immediately and never swallowed. Per invariant 4 the run stops and escalates
-    rather than picking the first match, because picking one silently is how automation
-    ends up acting on the wrong account.
+    Raised straight away and never swallowed. The run stops and asks for a person instead of
+    taking the first match, because quietly picking one is how you act on the wrong account.
     """
 
 
@@ -43,12 +41,11 @@ class ActionTimeout(SurfaceError):
 
 
 class PolicyViolation(SurfaceError):
-    """The policy gate refused the action. A refusal, not a malfunction.
+    """The policy refused the action.
 
-    `rule` and `reason` are kept apart on purpose. The rule id is safe to hand back to the
-    model so it knows the direction is closed. The reason names the pattern that matched,
-    which is a description of the allowlist, and a model told where the boundaries are will
-    reason about the boundaries.
+    `rule` and `reason` are separate so the loop can tell the model the rule without the
+    reason. The reason names the pattern that matched, and a model that knows exactly where
+    the boundary is will start probing it. See DECISIONS.md 0012.
     """
 
     def __init__(self, rule: str, reason: str) -> None:
@@ -59,11 +56,10 @@ class PolicyViolation(SurfaceError):
 
 @dataclass(frozen=True)
 class Resolved:
-    """A live handle to one control, plus which tier actually found it.
+    """A live handle to one control, plus which tier found it.
 
-    Deliberately a dataclass rather than a pydantic model: it wraps a handle onto a live
-    session, it is meaningless once that session ends, and nothing should ever be tempted
-    to serialize it.
+    A dataclass, not a pydantic model, because it holds a handle into a live browser session.
+    It means nothing once the session ends and should never be serialised.
     """
 
     strategy: str
@@ -81,10 +77,10 @@ class Surface(Protocol):
         ...
 
     def describe(self, ref: str) -> LocatorBundle:
-        """Turn a per-snapshot ref into a durable locator bundle.
+        """Turn a snapshot ref into a locator bundle that will still work later.
 
-        The one method that must run while the observation is still fresh, because the ref
-        dies with the snapshot that produced it.
+        Has to run while the snapshot is current, because the ref stops meaning anything once
+        the next snapshot is taken.
         """
         ...
 
@@ -100,15 +96,14 @@ class Surface(Protocol):
         risk: RiskClass | None = None,
         approved: bool = False,
     ) -> ActionOutcome:
-        """Perform an action, after the policy gate has allowed it.
+        """Perform an action once the policy allows it.
 
-        `approved` carries one human decision for one call. It waives the approval
-        requirement and nothing else: the host allowlist, the denied paths and the allowed
-        action list all still apply, and a block from any of those still raises.
+        `approved` is one person's approval for this one call. It skips the approval
+        requirement and nothing else: allowed hosts, denied paths and allowed actions still
+        apply.
 
-        `wait` is the recorded WaitSpec for this step, applied after the action lands.
-        `risk` is the recorded risk classification, which exists during replay and does not
-        during discovery; the gate falls back to control names when it is None.
+        `wait` is the step's saved WaitSpec, applied after the action. `risk` is the step's
+        saved risk class. Discovery has none yet, so the policy falls back to control names.
         """
         ...
 

@@ -1,14 +1,12 @@
-"""Turn a durable LocatorBundle into a live Playwright locator.
+"""Turn a saved LocatorBundle into a live Playwright locator.
 
-Split out of WebSurface because this is the half that replay will reuse unchanged, and
-because it is the half worth reading on its own: it is where the four tiers in the design rules
-section 6 stop being a design and become selectors.
+Kept apart from WebSurface so it can be read on its own. This is where the locator tiers turn
+into actual selectors.
 
-Note what tier 2 and tier 3 actually compile to. Both use XPath, and both use it to express a
-SEMANTIC RELATION rather than a markup path: "the row that contains a cell reading Nickname",
-"the table that this heading belongs to". The role still comes from get_by_role. That is a
-different thing from the CSS fallback, which names a specific element by a specific attribute
-and breaks when the markup is rearranged. See DECISIONS.md 0006.
+Tiers 2 and 3 use XPath, but to describe a relationship rather than a path through the markup:
+"the row with a cell reading Nickname", "the table under this heading". The role still comes
+from get_by_role. The CSS tier is different: it names one element by one attribute and breaks
+when the markup moves. See DECISIONS.md 0006.
 """
 from __future__ import annotations
 
@@ -34,9 +32,9 @@ Scope = Page | FrameLocator
 class Built:
     """A compiled locator, plus an optional guard.
 
-    `guard` exists for container scoping. A `.nth(i)` locator always matches at most one
-    element by construction, so ambiguity there hides in the container rather than in the
-    target. The guard is the container, and it must match exactly one thing.
+    `guard` is for container scoping. A `.nth(i)` locator can never match more than one
+    element, so if something is ambiguous it is the container. The guard is the container, and
+    it has to match exactly one thing.
     """
 
     target: Locator
@@ -66,9 +64,8 @@ def frame_scope(page: Page, frame_path: Sequence[str]) -> Scope:
 def build(scope: Scope, spec: LocatorSpec) -> Built:
     """Compile one tier into a live locator.
 
-    `scope` is typed loosely on purpose: Page and FrameLocator share these methods but do not
-    share a base class in the Playwright stubs, and get_by_role types its role argument as a
-    closed Literal while our schema carries an open string.
+    `scope` is cast to Any because Page and FrameLocator have these methods but no shared base
+    class in the Playwright stubs, and get_by_role wants a Literal role while ours is a string.
     """
     loose = cast(Any, scope)
 
@@ -78,8 +75,7 @@ def build(scope: Scope, spec: LocatorSpec) -> Built:
     if isinstance(spec, LabelRelationLocator):
         label = xpath_literal(spec.label_text)
         if spec.relation in ("cell_to_left", "enclosing_row"):
-            # The row that contains a cell reading <label>. The control is whatever in that
-            # row carries the wanted role, which is a relation, not a path.
+            # The row with a cell reading <label>, then whatever in that row has the role.
             row = loose.locator(f"xpath=//tr[./*[normalize-space(.)={label}]]")
             return Built(target=cast(Any, row).get_by_role(spec.role))
         sibling = loose.locator(
