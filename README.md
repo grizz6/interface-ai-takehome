@@ -13,7 +13,7 @@ log those are assembled from is [DECISIONS.md](DECISIONS.md).
 
 ### Prerequisites
 
-- Python 3.11 or newer
+- Python 3.11 or newer. The full test suite and the demo commands pass on 3.11, 3.12 and 3.14
 - macOS or Linux
 - Chromium, installed by Playwright in the step below
 - A Gemini API key, **for a real discovery run only**. Replay, escalation, the scripted dry run
