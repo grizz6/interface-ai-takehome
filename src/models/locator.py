@@ -1,9 +1,8 @@
-"""How a control is identified, recorded as an ordered bundle rather than one selector.
+"""How a control is found again: an ordered list of ways, not a single selector.
 
-The tier order in design rules section 6 is deliberate. Role plus accessible name comes first
-because it is the only tier with a real analogue on a desktop surface through UI Automation
-or the AX API. CSS comes last and is marked brittle, because a selector built on markup
-structure is the tier that cannot cross to a surface with no DOM at all.
+Role and accessible name come first because that is the one tier that also exists on desktop,
+through UI Automation or the macOS accessibility API. CSS comes last and is marked brittle,
+because a selector tied to HTML markup has nothing to point at on a screen with no DOM.
 """
 from __future__ import annotations
 
@@ -15,10 +14,10 @@ from src.models.common import STRICT, Rect
 
 
 class ContainerRef(BaseModel):
-    """An enclosing region, named the way a person reading the screen would name it.
+    """A surrounding region, named the way a person looking at the screen would name it.
 
-    Deliberately carries no CSS. `dom_id_hint` is recorded so a human debugging a failed
-    run can find the element quickly, and is never consulted when resolving.
+    No CSS here. `dom_id_hint` is only there to help someone debugging a failed run find the
+    element. It is never used to find anything.
     """
 
     model_config = STRICT
@@ -63,12 +62,11 @@ class ContainerOrdinalLocator(BaseModel):
 
 
 class TextRelationLocator(BaseModel):
-    """Tier 4. For controls that have no ARIA role at all.
+    """Tier 4. For controls with no ARIA role at all.
 
-    A span with an inline onclick is invisible to get_by_role, because the accessibility
-    tree reports it as a bare text node with no role. Its visible text is the only durable
-    handle it has, and visible text is still something a human operator reads off the screen,
-    which is what keeps this above the CSS tier rather than beside it.
+    get_by_role cannot see a span with an inline onclick, because the accessibility tree shows
+    it as plain text. Its visible text is the only thing left to go on. A person reads that
+    text off the screen too, which is why this ranks above CSS.
     """
 
     model_config = STRICT
@@ -80,7 +78,7 @@ class TextRelationLocator(BaseModel):
 
 
 class CssFallbackLocator(BaseModel):
-    """Tier 5. Brittle by construction, which is why `note` is required."""
+    """Tier 5. Brittle, so `note` has to say why nothing better worked."""
 
     model_config = STRICT
 
@@ -101,7 +99,7 @@ Locator = Annotated[
 
 
 class LocatorBundle(BaseModel):
-    """An ordered set of ways to find one control, plus the frame it lives in."""
+    """The ways to find one control, best first, plus the frame it is in."""
 
     model_config = STRICT
 

@@ -156,7 +156,7 @@
     },
     "NeedsHumanResult": {
       "additionalProperties": false,
-      "description": "The run stopped and asked for a person, rather than guessing.",
+      "description": "The run stopped and asked for a person instead of guessing.",
       "properties": {
         "evidence": {
           "$ref": "#/$defs/EvidenceRef"
@@ -197,7 +197,7 @@
     },
     "PolicyBlockedResult": {
       "additionalProperties": false,
-      "description": "The policy gate refused an action. A refusal is not a malfunction.",
+      "description": "The policy refused an action. That is a refusal, not something broken.",
       "properties": {
         "attempted_action": {
           "$ref": "#/$defs/ActionType"
@@ -231,7 +231,7 @@
     },
     "StepTrace": {
       "additionalProperties": false,
-      "description": "What actually happened on one step, including which locator tier resolved it.\n\n`locator_strategy_used` is telemetry, not decoration. A flow quietly degrading from\nrole_name to css_fallback over successive runs is the early warning that a surface has\ndrifted, and it is invisible unless it is recorded per step.",
+      "description": "What happened on one step, including which locator tier found the control.\n\n`locator_strategy_used` is how you notice an app changing. A flow that slowly slides from\nrole_name to css_fallback over many runs is an early warning, and you only see it if every\nstep records it.",
       "properties": {
         "action": {
           "$ref": "#/$defs/ActionType"

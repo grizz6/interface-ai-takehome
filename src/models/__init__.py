@@ -1,7 +1,6 @@
-"""Pydantic schemas: Capability, LocatorBundle, RunResult union.
+"""Pydantic schemas: Capability, LocatorBundle and the RunResult union.
 
-The public surface of the model package. Import from here rather than reaching into the
-individual modules, so the internal file layout stays free to change.
+Import from here rather than from the individual modules, so the files can be moved around.
 """
 from __future__ import annotations
 

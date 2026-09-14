@@ -1,11 +1,10 @@
-"""Export JSON Schema for the two contracts a reviewer and a caller need.
+"""Export JSON Schema for capabilities and run results.
 
 Run with `make schemas`. Writes schemas/capability.schema.json and
 schemas/run_result.schema.json.
 
-Capability is exported because it is the artifact a human reviews and an agent invokes.
-RunResult is exported because it is what the caller has to branch on, and a caller that
-cannot see the five kinds up front will collapse them.
+Capability is what a person reviews and an agent runs. RunResult is what a caller branches
+on, and a caller that cannot see all five result types up front tends to lump them together.
 """
 from __future__ import annotations
 

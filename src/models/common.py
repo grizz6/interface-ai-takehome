@@ -1,10 +1,10 @@
-"""Enums and small value types shared across the artifact and result models.
+"""Enums and small value types used by the capability and result models.
 
-Schema only. Nothing here has behaviour, imports a driver, or knows what a browser is.
+No behaviour here, and nothing that knows about a browser.
 
-Every model in this package sets `extra="forbid"`. A capability artifact is meant to be
-hand reviewed and hand edited, and a misspelled field that is silently ignored is exactly
-the failure mode that makes a recorded flow drift away from what it claims to do.
+Every model in this package sets `extra="forbid"`. People read and edit capability files by
+hand, and a misspelled field that gets silently ignored is how a saved flow ends up doing
+something other than what it says.
 """
 from __future__ import annotations
 
@@ -15,14 +15,14 @@ from typing import Annotated
 from pydantic import AfterValidator, BaseModel, ConfigDict, ValidationInfo
 
 STRICT = ConfigDict(extra="forbid", frozen=True)
-"""Shared config for models that record facts. Frozen per design rules section 9."""
+"""Shared config for models that record facts, which should not change after the fact."""
 
 
 def _reject_uncompilable_regex(value: str | None, info: ValidationInfo) -> str | None:
-    """Compile a user supplied regex during schema validation, not during replay.
+    """Compile a user-supplied regex when the model is validated, not during replay.
 
-    A pattern that only blows up when the executor first runs it is a pattern that already
-    got through human review and into an approved artifact. See DECISIONS.md 0004.
+    A pattern that only fails when replay first uses it has already been through review and
+    approval by then. See DECISIONS.md 0004.
     """
     if value is None:
         return value
@@ -38,10 +38,7 @@ def _reject_uncompilable_regex(value: str | None, info: ValidationInfo) -> str |
 
 
 RegexPattern = Annotated[str | None, AfterValidator(_reject_uncompilable_regex)]
-"""A user supplied regular expression, compiled at schema validation time.
-
-Optional by construction: None is a legal value and is passed through untouched.
-"""
+"""A user-supplied regular expression, compiled during validation. None is allowed."""
 
 
 class SurfaceKind(StrEnum):
@@ -119,7 +116,7 @@ class Holder(StrEnum):
 
 
 class LeaseState(StrEnum):
-    """Where a session is in the handoff protocol. See src/escalation/lease.py."""
+    """Where a session is in the handoff. See src/escalation/lease.py."""
 
     RUNNING = "running"
     PAUSED = "paused"
@@ -129,7 +126,7 @@ class LeaseState(StrEnum):
 
 
 class ResolutionOutcome(StrEnum):
-    """What the operator did, which decides what automation does with the step."""
+    """What the operator did, which decides what the run does with the step."""
 
     APPROVED = "approved"
     COMPLETED_MANUALLY = "completed_manually"

@@ -1,11 +1,10 @@
-"""The result contract. Every run returns exactly one of five kinds.
+"""Run results. Every run ends as exactly one of five types.
 
-The separation is the point, and it is design rules section 7. A business outcome is an answer
-the caller asked for, a failure is a defect, and a policy block is a refusal. Collapsing any
-of them into the others is the design mistake this contract exists to prevent.
+A business outcome is an answer the caller wanted, a failure is something broken, and a policy
+block is a refusal. Keeping them apart is the whole point.
 
-Recoverable conditions are deliberately absent from this union. They are not outcomes, they
-are things that happened on the way to one, so they ride on a Success as `recoveries_applied`.
+There is no type for a recovered problem. A recovery is something that happened on the way to
+a result, so it is listed in `recoveries_applied` on a success.
 """
 from __future__ import annotations
 
@@ -17,11 +16,11 @@ from src.models.common import STRICT, ActionType, FailureClass, StuckReason
 
 
 class StepTrace(BaseModel):
-    """What actually happened on one step, including which locator tier resolved it.
+    """What happened on one step, including which locator tier found the control.
 
-    `locator_strategy_used` is telemetry, not decoration. A flow quietly degrading from
-    role_name to css_fallback over successive runs is the early warning that a surface has
-    drifted, and it is invisible unless it is recorded per step.
+    `locator_strategy_used` is how you notice an app changing. A flow that slowly slides from
+    role_name to css_fallback over many runs is an early warning, and you only see it if every
+    step records it.
     """
 
     model_config = STRICT
@@ -74,7 +73,7 @@ class BusinessOutcomeResult(BaseModel):
 
 
 class NeedsHumanResult(BaseModel):
-    """The run stopped and asked for a person, rather than guessing."""
+    """The run stopped and asked for a person instead of guessing."""
 
     model_config = STRICT
 
@@ -87,7 +86,7 @@ class NeedsHumanResult(BaseModel):
 
 
 class PolicyBlockedResult(BaseModel):
-    """The policy gate refused an action. A refusal is not a malfunction."""
+    """The policy refused an action. That is a refusal, not something broken."""
 
     model_config = STRICT
 
@@ -129,9 +128,8 @@ EXIT_CODES: Final[dict[str, int]] = {
     "policy_blocked": 30,
     "failure": 40,
 }
-"""Distinct process exit code per result kind.
+"""One exit code per result type.
 
-Spaced by ten so a caller can branch on the decade without parsing JSON, and so a related
-code can be added later without renumbering. A shell invoking a capability can tell a
-business outcome from a failure without reading stdout at all.
+Ten apart, so a related code can be added later without renumbering. A shell script can tell a
+business outcome from a failure without reading any output.
 """

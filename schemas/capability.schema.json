@@ -22,7 +22,7 @@
     },
     "Assertion": {
       "additionalProperties": false,
-      "description": "A signal plus why it is being asserted, phrased for whoever reads the failure.",
+      "description": "A signal plus a sentence saying what it checks, for whoever reads the failure.",
       "properties": {
         "description": {
           "title": "Description",
@@ -46,7 +46,7 @@
     },
     "BusinessOutcomeSpec": {
       "additionalProperties": false,
-      "description": "A legitimate answer the caller needs, declared up front so replay can return it.\n\nPer design rule 5 these are results, never exceptions. \"No such member\" is an\nanswer, not a crash, and conflating the two is the mistake the brief names by name.",
+      "description": "An expected answer from the app, declared up front so replay can return it.\n\nThese are results, never exceptions. \"No such member\" is an answer, not a crash, and\nmixing the two up is the mistake the brief warns about.",
       "properties": {
         "check_after_step": {
           "anyOf": [
@@ -138,7 +138,7 @@
     },
     "ContainerRef": {
       "additionalProperties": false,
-      "description": "An enclosing region, named the way a person reading the screen would name it.\n\nDeliberately carries no CSS. `dom_id_hint` is recorded so a human debugging a failed\nrun can find the element quickly, and is never consulted when resolving.",
+      "description": "A surrounding region, named the way a person looking at the screen would name it.\n\nNo CSS here. `dom_id_hint` is only there to help someone debugging a failed run find the\nelement. It is never used to find anything.",
       "properties": {
         "dom_id_hint": {
           "anyOf": [
@@ -170,7 +170,7 @@
     },
     "CssFallbackLocator": {
       "additionalProperties": false,
-      "description": "Tier 5. Brittle by construction, which is why `note` is required.",
+      "description": "Tier 5. Brittle, so `note` has to say why nothing better worked.",
       "properties": {
         "brittle": {
           "const": true,
@@ -203,7 +203,7 @@
     },
     "ExtractionSpec": {
       "additionalProperties": false,
-      "description": "How to read one value off the surface.\n\nDeclared, not executed as a step. See DECISIONS.md 0003 for why reading is separated\nfrom acting.",
+      "description": "How to read one value off the screen.\n\nDeclared on an output rather than run as a step. DECISIONS.md 0003 says why.",
       "properties": {
         "attribute": {
           "anyOf": [
@@ -268,7 +268,7 @@
     },
     "InsertedStep": {
       "additionalProperties": false,
-      "description": "A step one variant needs and the base flow does not, such as an extra confirmation.",
+      "description": "A step one tenant needs that the base flow does not, like an extra confirmation.",
       "properties": {
         "after_index": {
           "title": "After Index",
@@ -323,7 +323,7 @@
     },
     "LiteralBinding": {
       "additionalProperties": false,
-      "description": "A value baked into the artifact. Never used for anything sensitive.",
+      "description": "A fixed value saved in the capability. Never used for anything sensitive.",
       "properties": {
         "source": {
           "const": "literal",
@@ -344,7 +344,7 @@
     },
     "LocatorBundle": {
       "additionalProperties": false,
-      "description": "An ordered set of ways to find one control, plus the frame it lives in.",
+      "description": "The ways to find one control, best first, plus the frame it is in.",
       "properties": {
         "fallbacks": {
           "items": {
@@ -461,7 +461,7 @@
     },
     "OutputSpec": {
       "additionalProperties": false,
-      "description": "One typed value the calling agent gets back.",
+      "description": "One typed value the caller gets back.",
       "properties": {
         "description": {
           "title": "Description",
@@ -493,7 +493,7 @@
     },
     "ParamBinding": {
       "additionalProperties": false,
-      "description": "Take the value from a caller supplied parameter at invocation time.",
+      "description": "Use the value of a parameter the caller passes in.",
       "properties": {
         "param": {
           "title": "Param",
@@ -514,7 +514,7 @@
     },
     "ParamSpec": {
       "additionalProperties": false,
-      "description": "One typed input the calling agent supplies per invocation.",
+      "description": "One typed input the caller passes each time the capability runs.",
       "properties": {
         "description": {
           "title": "Description",
@@ -572,7 +572,7 @@
     },
     "Provenance": {
       "additionalProperties": false,
-      "description": "Where this artifact came from, kept apart from what it does.\n\nThe raw model transcript is deliberately not here. The artifact is decoupled from it,\nand `raw_step_count` is the only trace of how much the recorder compressed.",
+      "description": "Where this capability came from, kept separate from what it does.\n\nThe model transcript is not copied in. `raw_step_count` is the only sign of how many\nturns the recorder boiled down.",
       "properties": {
         "discovered_by_model": {
           "title": "Discovered By Model",
@@ -628,7 +628,7 @@
     },
     "RecoveryRule": {
       "additionalProperties": false,
-      "description": "A recoverable condition and what to do about it.\n\nRecoveries never become a result kind. They are recorded as `recoveries_applied` on a\nSuccess, so a run that needed three retries is visibly different from one that did not.",
+      "description": "A problem the run can fix itself, and how.\n\nA recovery is never a result of its own. It is listed in `recoveries_applied` on a\nsuccess, so a run that needed three retries still looks different from one that did not.",
       "properties": {
         "action": {
           "$ref": "#/$defs/RecoveryAction"
@@ -760,7 +760,7 @@
     },
     "Signal": {
       "additionalProperties": false,
-      "description": "An observable condition on a surface.\n\nOne signal type serves checkpoints, business outcome detection, recovery triggers and\nwaits, so that \"how do we know we are there\" is expressed one way everywhere.",
+      "description": "Something you can check on the screen.\n\nCheckpoints, business outcomes, recovery triggers and waits all use this one type, so\n\"how do we know we got there\" is written the same way everywhere.",
       "properties": {
         "aria_template": {
           "anyOf": [
@@ -1122,7 +1122,7 @@
     },
     "SurfaceFingerprint": {
       "additionalProperties": false,
-      "description": "What the surface looked like when the flow was recorded.\n\nThe drift detector for multi-tenant reuse: if the fingerprint no longer matches, the\nartifact may still be correct for a different tenant but should not be trusted silently.",
+      "description": "What the app looked like when the flow was recorded.\n\nUsed to notice when the app has changed or is a different tenant. If it no longer\nmatches, the capability might still work, but it should not just be trusted.",
       "properties": {
         "aria_template": {
           "anyOf": [
@@ -1191,7 +1191,7 @@
     },
     "TextRelationLocator": {
       "additionalProperties": false,
-      "description": "Tier 4. For controls that have no ARIA role at all.\n\nA span with an inline onclick is invisible to get_by_role, because the accessibility\ntree reports it as a bare text node with no role. Its visible text is the only durable\nhandle it has, and visible text is still something a human operator reads off the screen,\nwhich is what keeps this above the CSS tier rather than beside it.",
+      "description": "Tier 4. For controls with no ARIA role at all.\n\nget_by_role cannot see a span with an inline onclick, because the accessibility tree shows\nit as plain text. Its visible text is the only thing left to go on. A person reads that\ntext off the screen too, which is why this ranks above CSS.",
       "properties": {
         "container": {
           "anyOf": [
@@ -1240,7 +1240,7 @@
     },
     "VariantOverride": {
       "additionalProperties": false,
-      "description": "How one tenant differs from the base recording, expressed as a diff.\n\nThe point is that a second tenant running the same vendor product is a patch, not a\nsecond recording.",
+      "description": "How one tenant differs from the base recording.\n\nA second tenant on the same vendor product should be a small patch, not a new recording.",
       "properties": {
         "description": {
           "title": "Description",
@@ -1288,7 +1288,7 @@
     },
     "WaitSpec": {
       "additionalProperties": false,
-      "description": "What the executor waits for before considering a step done.",
+      "description": "What replay waits for before treating a step as done.",
       "properties": {
         "condition": {
           "enum": [
@@ -1335,7 +1335,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "A reusable, reviewable, parameterized flow that an agent can invoke by name.\n\nFrozen. A recorded fact does not change after the fact; a new version is a new artifact.",
+  "description": "A saved flow with parameters, which a person can review and an agent can run by name.\n\nFrozen. To change one, publish a new version.",
   "properties": {
     "capability_id": {
       "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",

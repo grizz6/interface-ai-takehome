@@ -1,8 +1,7 @@
-"""The capability artifact: the contract between a recorded flow and everything else.
+"""The capability: a saved flow, and everything needed to run it again.
 
-This is the centre of the system. The discovery loop produces one, a human reviews one,
-and the replay engine executes one with no model involved. Everything the executor needs
-is declared here, which is what lets replay be deterministic.
+Discovery produces one, a person reviews it, and replay runs it with no model. Replay can be
+deterministic because everything it needs is written down here.
 """
 from __future__ import annotations
 
@@ -35,10 +34,10 @@ _TEMPLATE_RE = re.compile(r"\{([^{}]*)\}")
 
 
 class Signal(BaseModel):
-    """An observable condition on a surface.
+    """Something you can check on the screen.
 
-    One signal type serves checkpoints, business outcome detection, recovery triggers and
-    waits, so that "how do we know we are there" is expressed one way everywhere.
+    Checkpoints, business outcomes, recovery triggers and waits all use this one type, so
+    "how do we know we got there" is written the same way everywhere.
     """
 
     model_config = STRICT
@@ -60,7 +59,7 @@ class Signal(BaseModel):
 
     @model_validator(mode="after")
     def _aria_template_is_parseable(self) -> Signal:
-        """Syntax only. See DECISIONS.md 0005 for what this deliberately does not check."""
+        """Checks YAML syntax only. DECISIONS.md 0005 explains what it cannot check."""
         if self.aria_template is None:
             return self
         try:
@@ -103,7 +102,7 @@ class Signal(BaseModel):
 
 
 class Assertion(BaseModel):
-    """A signal plus why it is being asserted, phrased for whoever reads the failure."""
+    """A signal plus a sentence saying what it checks, for whoever reads the failure."""
 
     model_config = STRICT
 
@@ -113,7 +112,7 @@ class Assertion(BaseModel):
 
 
 class WaitSpec(BaseModel):
-    """What the executor waits for before considering a step done."""
+    """What replay waits for before treating a step as done."""
 
     model_config = STRICT
 
@@ -131,7 +130,7 @@ class WaitSpec(BaseModel):
 
 
 class ParamBinding(BaseModel):
-    """Take the value from a caller supplied parameter at invocation time."""
+    """Use the value of a parameter the caller passes in."""
 
     model_config = STRICT
 
@@ -140,7 +139,7 @@ class ParamBinding(BaseModel):
 
 
 class LiteralBinding(BaseModel):
-    """A value baked into the artifact. Never used for anything sensitive."""
+    """A fixed value saved in the capability. Never used for anything sensitive."""
 
     model_config = STRICT
 
@@ -193,7 +192,7 @@ class Step(BaseModel):
 
 
 class ParamSpec(BaseModel):
-    """One typed input the calling agent supplies per invocation."""
+    """One typed input the caller passes each time the capability runs."""
 
     model_config = STRICT
 
@@ -216,10 +215,9 @@ class ParamSpec(BaseModel):
 
 
 class ExtractionSpec(BaseModel):
-    """How to read one value off the surface.
+    """How to read one value off the screen.
 
-    Declared, not executed as a step. See DECISIONS.md 0003 for why reading is separated
-    from acting.
+    Declared on an output rather than run as a step. DECISIONS.md 0003 says why.
     """
 
     model_config = STRICT
@@ -239,7 +237,7 @@ class ExtractionSpec(BaseModel):
 
 
 class OutputSpec(BaseModel):
-    """One typed value the calling agent gets back."""
+    """One typed value the caller gets back."""
 
     model_config = STRICT
 
@@ -251,10 +249,10 @@ class OutputSpec(BaseModel):
 
 
 class BusinessOutcomeSpec(BaseModel):
-    """A legitimate answer the caller needs, declared up front so replay can return it.
+    """An expected answer from the app, declared up front so replay can return it.
 
-    Per design rule 5 these are results, never exceptions. "No such member" is an
-    answer, not a crash, and conflating the two is the mistake the brief names by name.
+    These are results, never exceptions. "No such member" is an answer, not a crash, and
+    mixing the two up is the mistake the brief warns about.
     """
 
     model_config = STRICT
@@ -270,11 +268,11 @@ class BusinessOutcomeSpec(BaseModel):
 
 
 class ParamDescriptor(BaseModel):
-    """A parameter's name and how sensitive it is. Never its value.
+    """A parameter's name and sensitivity, never its value.
 
-    A projection of ParamSpec for anything written to disk that has to say which inputs a run
-    was given. Built from the declared schema rather than from the supplied values, so the
-    code path that could leak one does not exist. See DECISIONS.md 0033.
+    Used wherever a file on disk needs to list a run's inputs. It is built from the declared
+    inputs, not from the values passed in, so there is no way for a value to end up in it.
+    See DECISIONS.md 0033.
     """
 
     model_config = STRICT
@@ -286,10 +284,10 @@ class ParamDescriptor(BaseModel):
 
 
 class RecoveryRule(BaseModel):
-    """A recoverable condition and what to do about it.
+    """A problem the run can fix itself, and how.
 
-    Recoveries never become a result kind. They are recorded as `recoveries_applied` on a
-    Success, so a run that needed three retries is visibly different from one that did not.
+    A recovery is never a result of its own. It is listed in `recoveries_applied` on a
+    success, so a run that needed three retries still looks different from one that did not.
     """
 
     model_config = STRICT
@@ -309,10 +307,10 @@ class RecoveryRule(BaseModel):
 
 
 class SurfaceFingerprint(BaseModel):
-    """What the surface looked like when the flow was recorded.
+    """What the app looked like when the flow was recorded.
 
-    The drift detector for multi-tenant reuse: if the fingerprint no longer matches, the
-    artifact may still be correct for a different tenant but should not be trusted silently.
+    Used to notice when the app has changed or is a different tenant. If it no longer
+    matches, the capability might still work, but it should not just be trusted.
     """
 
     model_config = STRICT
@@ -360,7 +358,7 @@ class StepPatch(BaseModel):
 
 
 class InsertedStep(BaseModel):
-    """A step one variant needs and the base flow does not, such as an extra confirmation."""
+    """A step one tenant needs that the base flow does not, like an extra confirmation."""
 
     model_config = STRICT
 
@@ -369,10 +367,9 @@ class InsertedStep(BaseModel):
 
 
 class VariantOverride(BaseModel):
-    """How one tenant differs from the base recording, expressed as a diff.
+    """How one tenant differs from the base recording.
 
-    The point is that a second tenant running the same vendor product is a patch, not a
-    second recording.
+    A second tenant on the same vendor product should be a small patch, not a new recording.
     """
 
     model_config = STRICT
@@ -386,10 +383,10 @@ class VariantOverride(BaseModel):
 
 
 class Provenance(BaseModel):
-    """Where this artifact came from, kept apart from what it does.
+    """Where this capability came from, kept separate from what it does.
 
-    The raw model transcript is deliberately not here. The artifact is decoupled from it,
-    and `raw_step_count` is the only trace of how much the recorder compressed.
+    The model transcript is not copied in. `raw_step_count` is the only sign of how many
+    turns the recorder boiled down.
     """
 
     model_config = STRICT
@@ -404,9 +401,9 @@ class Provenance(BaseModel):
 
 
 class Capability(BaseModel):
-    """A reusable, reviewable, parameterized flow that an agent can invoke by name.
+    """A saved flow with parameters, which a person can review and an agent can run by name.
 
-    Frozen. A recorded fact does not change after the fact; a new version is a new artifact.
+    Frozen. To change one, publish a new version.
     """
 
     model_config = STRICT
@@ -586,7 +583,7 @@ class Capability(BaseModel):
 
 
 def describe_params(capability: Capability, supplied: Mapping[str, object]) -> list[ParamDescriptor]:
-    """Names and sensitivities, read off the schema. The values are consulted for one boolean."""
+    """Names and sensitivities from the declared inputs. Values are only used to set `supplied`."""
     return [
         ParamDescriptor(
             name=spec.name,

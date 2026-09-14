@@ -1,18 +1,12 @@
-"""The guardrail configuration the policy gate reads.
+"""The policy config that PolicyGate reads.
 
-Configuration only. The gate that enforces it lives in src/policy and is phase 3, because
-design rule 3 puts enforcement inside the surface layer rather than in a prompt or
-at the call sites.
+Config only. The check itself is in src/policy, and it runs inside the surface rather than in
+the prompt or at each call site.
 
-PRECEDENCE, and this is the rule that matters:
-
-    Denied patterns beat allowed patterns, always.
-
-A path matching both `allowed_path_patterns` and `denied_path_patterns` is DENIED. The
-allowlist is not a grant that a later rule can qualify; the denylist is an absolute veto
-applied after it. The ordering is fixed in this direction on purpose, because the opposite
-reading fails open, and a guardrail that fails open under an ambiguous config is worse than
-no guardrail at all. Anything added to this model later must preserve that direction.
+Denied patterns always beat allowed patterns. A path that matches both
+`allowed_path_patterns` and `denied_path_patterns` is denied. The other way round would fail
+open when the config is ambiguous, which is worse than having no allowlist. Keep it this way
+if anything is added here.
 """
 from __future__ import annotations
 
@@ -24,10 +18,10 @@ from src.models.common import ActionType, Sensitivity
 
 
 class PolicyConfig(BaseModel):
-    """What the agent is permitted to do, and where.
+    """What a run is allowed to do, and where.
 
-    Not frozen, unlike the artifact models: this is operator configuration that is edited
-    between runs, not a fact recorded about a run that already happened.
+    Not frozen, unlike the capability models, because people edit it between runs. It is
+    settings, not a record of something that happened.
     """
 
     model_config = ConfigDict(extra="forbid")
