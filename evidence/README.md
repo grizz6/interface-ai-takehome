@@ -93,14 +93,19 @@ so `member_restricted` works in the sub-account capability as well.
 capabilities, which only runs with `--allow-draft`. Without it the run is refused before it
 starts, with exit 40.
 
-**02-replay-success names a commit id from before I reworded the commit messages.** Rewording
-changed every commit id but no files, so that commit still has exactly the same code. I did not
-edit the evidence to match, because evidence is only ever written by a real run. Runs 03 to 09
-were made after the rewording and need no translation.
+**The commit ids in these runs are from before the history was rewritten.** It was rewritten
+twice after the runs were made: once to reword commit messages, and once to take out a local
+notes file that should never have been committed, along with comments that pointed to it.
+Neither changed how any code behaves, so each commit below runs exactly as it did then. I did
+not edit the evidence to match, because evidence is only ever written by a real run.
 
-| recorded in 02's meta.json | same commit today |
-| --- | --- |
-| `7ac0ff9d4312e3e16314132092b42c2682f8a268` | `275433536f048637660d5aca41b641c49a4e6a97` |
+| run | recorded in meta.json | same commit today |
+| --- | --- | --- |
+| 02 | `7ac0ff9d4312e3e16314132092b42c2682f8a268` | `d0b8aa8e62f116a5d551353a182f926373bb1aae` |
+| 03 to 06 | `f20cad82cc052fd3fee43863a351cbf23af13ead` | `d9ffa54b118dde1591ea5eada7c94218f77d93c1` |
+| 07 | `b16ec2adb7b4d0efcb0ff2a9808e86fe61016d80` | `a973e6c32e844732ff53c3df22fe581a2382a955` |
+| 08 | `0dad8082cc72fe20b95c714e3956f4eed1814b77` | `0fa3ca914c5fd71bf29f9a779da3fa7b0548aa25` |
+| 09 | `33a39d4fa54a1d257d935d8b8989b8ea97d499f5` | `14ce8a8483c44f49245b37a0426a56efb178b2c6` |
 
 **01-discovery-real is older than `meta.json`**, so it has none. The key it was made with has
 since been revoked.
