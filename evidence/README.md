@@ -42,7 +42,7 @@ and 40 from one capability.
 ### 01-discovery-real is preserved as it was recorded
 
 It has **no `meta.json`**, and `INDEX.md` shows its kind as `unknown` for that reason. The run
-was produced on 2026-09-12 against `gemini-3.6-flash`, before phase 8 introduced the metadata
+was produced on 2026-09-12 against `gemini-3.6-flash`, before the evidence writer introduced the metadata
 file. It has not been regenerated, because regenerating it means spending a real model call to
 replace a genuine artifact with a second genuine artifact that differs only in having one more
 file. The run itself is the least reproducible thing in this repository and the most worth
@@ -312,9 +312,16 @@ else the caller knows is sensitive.
 
 ## Reading the whole directory at once
 
+Print a summary of any directory of runs:
+
 ```bash
-python -c "from src.evidence.index import collect, render; print(render(collect('evidence')))"
+.venv/bin/python -c "from src.evidence.index import collect, render; print(render(collect('evidence')))"
 ```
 
-One row per run: run id, kind, result kind, exit code, duration, and the single line that says
-what happened. Phase 9 writes this to `evidence/curated/INDEX.md`.
+One row per run: the directory name, kind, result kind, exit code, duration, and the single line
+that says what happened. `evidence/curated/INDEX.md` is the same table for the curated set,
+regenerated with:
+
+```bash
+.venv/bin/python -c "from src.evidence.index import write_index; write_index('evidence/curated', 'evidence/curated/INDEX.md')"
+```
