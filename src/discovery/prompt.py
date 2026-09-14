@@ -1,12 +1,10 @@
-"""The system prompt, as a constant so it can be reviewed and diffed like any other code.
+"""The system prompt, kept as one constant so it can be read and diffed like code.
 
-A prompt that is assembled at runtime from fragments cannot be read in one piece, and a
-prompt nobody can read in one piece is one nobody reviews. The tool list here is written out
-rather than generated, and a test asserts every tool name appears, so drift is caught without
-making the text dynamic.
+A prompt pieced together at runtime is hard to read in one go, so nobody reviews it. The tool
+list is written out by hand, and a test checks every tool name appears in it.
 
-Nothing here is a guardrail. The policy gate is the guardrail and it lives in Python, per
-invariant 3. This text tells the model how to work well, not what it is forbidden to do.
+Nothing in here is a safety rule. Those live in the policy check in Python. This text is
+about how to work well, not what is forbidden.
 """
 from __future__ import annotations
 

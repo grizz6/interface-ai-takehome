@@ -1,11 +1,11 @@
-"""Replace sensitive values with placeholders before anything is written down.
+"""Swap sensitive values for placeholders before anything is written down.
 
-design rule 6 says nothing marked pii or secret reaches disk: not artifacts, not
-logs, not evidence, not filenames. This is the one place that rule is implemented, so that
-everything which writes can route through it rather than each caller remembering.
+Nothing marked pii or secret should reach disk: not capabilities, logs, evidence or file
+names. This is the one place that happens, so everything that writes goes through it instead
+of each caller having to remember.
 
-The placeholder form is `<param:name>`, which is the same shape a ParamBinding uses, so a
-redacted log line reads as a description of the flow rather than as damaged text.
+Placeholders look like `<param:name>`, the same as a parameter reference, so a redacted log
+line still reads sensibly.
 """
 from __future__ import annotations
 
@@ -13,11 +13,11 @@ from collections.abc import Mapping
 
 
 class Redactor:
-    """Built from name to sensitive value, applied to anything on its way out."""
+    """Built from a map of name to sensitive value, and applied to anything being written."""
 
     def __init__(self, values: Mapping[str, str]) -> None:
-        # Longest first, so a value that contains another value cannot be partly rewritten
-        # and leave a recognizable fragment behind.
+        # Longest first, so a value containing a shorter one is not half-replaced, leaving a
+        # recognisable piece behind.
         self._pairs: list[tuple[str, str]] = sorted(
             ((value, f"<param:{name}>") for name, value in values.items() if value),
             key=lambda pair: len(pair[0]),

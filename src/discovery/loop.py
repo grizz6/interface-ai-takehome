@@ -1,18 +1,15 @@
-"""The observe, decide, act loop.
+"""The look, decide, act loop.
 
-The loop owns three things the model is not trusted with, and they are the reason it is code
-rather than prompt.
+The loop, not the model, is in charge of three things.
 
-It converts refs into durable locators at the moment of the action, while the observation that
-issued them is still current. By the next turn those refs are meaningless, so this is the only
-moment the conversion can happen at all.
+It turns refs into saved locators at the moment of each action, while the snapshot they came
+from is still current. By the next turn those refs mean nothing, so this is the only chance.
 
-It decides when to stop. A model asked to judge its own progress will keep going, so the
-budgets live here: steps, wall clock, consecutive refusals, and a screen that has stopped
-changing.
+It decides when to stop. A model left to judge its own progress keeps going, so the limits
+live here: steps, time, refusals in a row, and a screen that has stopped changing.
 
-It refuses to believe a success it has not checked. `finish` is a claim, and `verify.py`
-executes that claim against the live page before any SuccessResult is returned.
+It does not accept a success without checking it. `verify.py` checks the `finish` claim against
+the live page before a SuccessResult is returned.
 """
 from __future__ import annotations
 
@@ -82,20 +79,20 @@ FULL_OBSERVATIONS_RETAINED = 2
 
 @dataclass(frozen=True)
 class DiscoveryLimits:
-    """Every budget in one place, so a run cannot quietly grow one."""
+    """All the limits in one place."""
 
     max_steps: int = 25
     wall_clock_s: float = 300.0
     max_consecutive_blocks: int = 3
-    # Three, not one. A validation error legitimately re-renders a structurally identical
-    # page, and calling that a stall would abandon a run that is working correctly.
+    # Three, not one. A validation error can re-render a page that looks identical, and
+    # calling that a stall would end a run that is going fine.
     max_identical_observations: int = 3
     max_finish_attempts: int = 3
 
 
 @dataclass
 class DiscoveryOutcome:
-    """The RunResult per design rules section 7, plus the transcript phase 5 compiles."""
+    """The run's result, plus the transcript the recorder compiles."""
 
     result: RunResult
     transcript: DiscoveryTranscript
@@ -103,7 +100,7 @@ class DiscoveryOutcome:
 
 @dataclass
 class _Turn:
-    """One exchange, kept structurally so history can be rebuilt rather than mutated."""
+    """One exchange, kept as data so the history can be rebuilt each turn."""
 
     observation_text: str
     observation_summary: str
@@ -114,7 +111,7 @@ class _Turn:
 
 
 class _Stop(Exception):
-    """Internal control flow: a stopping condition was met."""
+    """Raised inside the loop when a stop condition is hit."""
 
     def __init__(self, result: RunResult, reason: DiscoveryStop) -> None:
         super().__init__(reason)
@@ -123,13 +120,11 @@ class _Stop(Exception):
 
 
 def _describe_action(kind: ActionType, bundle: Any) -> str:
-    """A human readable description that never contains the value that was typed.
+    """A readable description that never includes the typed value.
 
-    The value is exactly the thing most likely to be a member id or an account number, and
-    this string travels into StepTrace and out into result.json. Redaction would catch a
-    value the caller thought to pass to --redact; it cannot catch one nobody declared. So the
-    description names the control instead, and the value lives only in ActionRecord where the
-    schema knows it is sensitive.
+    The typed value is the thing most likely to be a member id or account number, and this
+    string ends up in result.json. Redaction only catches values someone passed to --redact, so
+    the description names the control instead. The value stays in ActionRecord only.
     """
     control = getattr(bundle, "recorded_accessible_name", None) if bundle else None
     target = f" into {control!r}" if control else ""
@@ -160,21 +155,19 @@ class DiscoveryRun:
         on_observation: Any | None = None,
         session: Any = None,
     ) -> None:
-        # Optional, exactly as in replay. Without one, a stall or a give_up ends the run with
-        # NeedsHuman and nobody is asked. With one, the same two conditions hand the live
-        # session to a person who can look at the screen the model could not read.
+        # Optional, as in replay. Without a session, a stall or give_up ends the run with
+        # NeedsHuman. With one, the browser is handed to a person instead.
         self.session = session
-        # A callback rather than an EvidenceWriter, so the loop stays unaware of what
-        # evidence is and the dependency points one way only.
+        # A callback rather than an EvidenceWriter, so the loop does not depend on the
+        # evidence package.
         self._on_observation = on_observation
         self.target = target
         self.goal = goal
         self.surface = surface
         self.client = client
-        # Accepts a callable so the reference is resolved when a result is built rather
-        # than when the run starts. Screenshots are written as the run goes, so a reference
-        # captured up front lists none of them, and a caller reading result.json cannot find
-        # the richer signal section 3.5 asks for.
+        # Can be a callable, so it is read when a result is built rather than at the start.
+        # Screenshots are written as the run goes, and a reference taken at the start would
+        # list none of them in result.json.
         self._evidence_source = evidence
         self.limits = limits or DiscoveryLimits()
         self.tools = tools if tools is not None else discovery_tools()
@@ -200,7 +193,7 @@ class DiscoveryRun:
 
     @property
     def evidence(self) -> EvidenceRef:
-        """Resolved fresh each time, so screenshots written since the run began are listed."""
+        """Read fresh each time, so screenshots taken since the start are included."""
         source = self._evidence_source
         return source() if callable(source) else source
 
@@ -236,9 +229,9 @@ class DiscoveryRun:
     def _messages(self, current: str, screenshot: bytes | None) -> list[Message]:
         """Rebuild the whole history each turn.
 
-        Only the two most recent observations are carried in full. An aria snapshot of this
-        application runs to five thousand characters, and twenty of them would crowd out the
-        thing that actually matters, which is what the model did and what came back.
+        Only the two latest snapshots are sent in full. A snapshot of this app is about five
+        thousand characters, and twenty of them would bury what matters: what the model did
+        and what came back.
         """
         messages: list[Message] = [UserMessage(text=f"GOAL: {self.goal}")]
         newest_kept = len(self._turns) - (FULL_OBSERVATIONS_RETAINED - 1)
@@ -307,10 +300,8 @@ class DiscoveryRun:
         return DiscoveryOutcome(result=result, transcript=self.transcript)
 
     def _drive(self) -> None:
-        # Start where the caller said to start. Without this the model opens on about:blank
-        # with no idea where the application lives, and its only option is to guess a URL,
-        # which the policy gate then correctly refuses. The brief takes a goal AND an entry
-        # point; this is the entry point being used.
+        # Start at the target URL. Otherwise the model starts on about:blank with no idea
+        # where the app is, guesses a URL, and the policy refuses it.
         if self.target:
             self._act(
                 NavigateAction(url=self.target),
@@ -352,12 +343,12 @@ class DiscoveryRun:
                 )
 
     def _backfill_hash_after(self, digest: str) -> None:
-        """Close out the previous action with the screen state that followed it.
+        """Fill in the previous action's screen hash from after it ran.
 
-        An action cannot know what the page looks like afterwards until the next observation,
-        so the hash is written back here. Without it obs_hash_after is always None, and the
-        recorder's rule for dropping an action that changed nothing is dead code that never
-        fires. ActionRecord is frozen, so the record is replaced rather than mutated.
+        An action only finds out what the page looks like afterwards at the next snapshot, so
+        the hash is filled in here. Without it obs_hash_after is always None and the recorder
+        can never drop an action that changed nothing. ActionRecord is frozen, so it is
+        replaced.
         """
         if not self.transcript.actions:
             return
@@ -401,12 +392,12 @@ class DiscoveryRun:
                 f"{self._identical_observations} observations, so the model is repeating "
                 "itself without making progress"
             )
-            # Cleared so the loop gets a fresh budget rather than stalling again on the next
-            # observation. If a human unblocked the screen, the next digest differs anyway.
+            # Reset so the loop does not stall again straight away. If a person fixed the
+            # screen, the next hash will differ anyway.
             self._identical_observations = 0
             return observation
         if self._identical_observations >= self.limits.max_identical_observations - 1:
-            # One away from calling it a stall. Give the model a picture before it is too late.
+            # One away from a stall, so send the model a screenshot.
             self._want_screenshot = True
         return observation
 
@@ -457,7 +448,7 @@ class DiscoveryRun:
         if name in TARGETED_TOOLS:
             ref = str(args.get("ref") or "")
             if not ref or observation.by_ref(ref) is None:
-                # A stale ref is a model mistake, not a locator failure. Tell it and move on.
+                # An old ref is the model's mistake, not a locator failure. Tell it and carry on.
                 return (
                     f"There is no {ref!r} in the current snapshot. Refs are reassigned every "
                     "time the screen is captured. Call look and use a ref from the result.",
@@ -470,9 +461,8 @@ class DiscoveryRun:
         elif name is ToolName.PRESS_KEY:
             action = PressAction(key=str(args.get("key") or ""))
         else:
-            # Every remaining tool acts on a control, so the bundle above is not optional.
-            # If this ever fires, describe() returned None rather than raising, which is a
-            # bug in the surface rather than something the model did.
+            # The remaining tools all act on a control, so there must be a bundle. If this
+            # fires, describe() returned None instead of raising, which is a surface bug.
             if bundle is None:
                 return f"{name} needs a control to act on and none was resolved.", True
             if name is ToolName.CLICK:
@@ -488,7 +478,7 @@ class DiscoveryRun:
         return self._act(action, kind=kind, ref=ref, bundle=bundle, literal=literal)
 
     def _describe(self, ref: str) -> Any:
-        """Convert the ref now, while the snapshot that issued it is still current."""
+        """Turn the ref into a locator now, while its snapshot is still current."""
         try:
             return self.surface.describe(ref)
         except LocatorAmbiguous as exc:
@@ -545,11 +535,10 @@ class DiscoveryRun:
     def _refused(
         self, exc: PolicyViolation, kind: ActionType, attempted: str | None = None
     ) -> tuple[str, bool]:
-        """Name the rule, never the allowlist.
+        """Tell the model which rule refused it, but not what the rule allows.
 
-        The model is told the direction is closed and which rule closed it. It is not told
-        what the rule permits, because a model given the shape of the boundary will spend
-        its remaining steps probing the boundary.
+        A model told exactly where the boundary is will spend its remaining steps probing it.
+        See DECISIONS.md 0012.
         """
         self._consecutive_blocks += 1
         self._last_block = (exc.rule, kind)
@@ -580,12 +569,11 @@ class DiscoveryRun:
     def _ask_for_help(
         self, why: str, *, stop: DiscoveryStop = DiscoveryStop.NEEDS_HUMAN
     ) -> None:
-        """Hand the session to a human and wait. Raises _Stop if nobody resolves it.
+        """Hand the browser to a person and wait. Raises _Stop if nobody resolves it.
 
-        Discovery has no step to skip and no postcondition to verify, so the resume semantics
-        collapse to two cases: aborted ends the run, and anything else means a person has
-        been in the session and the model should look again. The loop re-observes on the next
-        turn regardless, which is what makes "look again" true rather than a hope.
+        Discovery has no step to skip and no postcondition to check, so there are only two
+        cases: aborted ends the run, and anything else means a person was in the browser and
+        the model should look again. The loop takes a new snapshot next turn either way.
         """
         if self.session is None:
             raise _Stop(
@@ -628,7 +616,7 @@ class DiscoveryRun:
         self._want_screenshot = True
 
     def _escalate(self, reason: StuckReason, detail: str) -> _Stop:
-        """Invariant 4: ambiguity stops the run. It never guesses and never retries."""
+        """Stop the run and ask for a person. Never guess and never retry."""
         self._event(EventKind.VERIFICATION, escalated=reason.value, detail=detail)
         return _Stop(
             NeedsHumanResult(

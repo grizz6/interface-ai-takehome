@@ -1,16 +1,13 @@
-"""What a discovery run produced, in a form phase 5 can compile into a Capability.
+"""What a discovery run produced, in a form the recorder can compile into a Capability.
 
-The load bearing field in this module is `ActionRecord.bundle`.
+The field that matters most is `ActionRecord.bundle`.
 
-A ref dies with the snapshot that issued it. By the time a run ends, every ref the model used
-is meaningless, so a transcript that recorded only "clicked e36" records nothing that can be
-replayed. `describe(ref)` therefore runs BEFORE the action executes, while the observation is
-still current, and its result is stored here. That conversion is the moment the run stops
-being a conversation and starts being an artifact, which is why design rule 9 calls
-it the recorder's most important job.
+A ref stops meaning anything once the next snapshot is taken. By the end of a run every ref
+the model used is useless, so a transcript that only says "clicked e36" cannot be replayed.
+That is why `describe(ref)` runs before the action, while the snapshot is still current, and
+its result is saved here.
 
-The bundle is not merely stored, it is enforced: an ActionRecord whose bundle still mentions
-the ref it came from is rejected on construction.
+An ActionRecord whose bundle still contains the ref it came from is rejected when it is built.
 """
 from __future__ import annotations
 
@@ -59,16 +56,16 @@ class EventKind(StrEnum):
 
 
 def hash_observation(aria_yaml: str) -> str:
-    """A short stable digest of a snapshot, for telling one screen state from another.
+    """A short hash of a snapshot, to tell one screen from another.
 
-    Used to show whether an action actually changed anything. Identical hashes either side
-    of a click is the signature of a control that did nothing.
+    Shows whether an action changed anything. The same hash before and after a click means
+    the click did nothing.
     """
     return hashlib.sha256(aria_yaml.encode()).hexdigest()[:16]
 
 
 class ActionRecord(BaseModel):
-    """One action taken, with the durable locator captured at the moment it was taken."""
+    """One action, with the locator that was built at the moment it ran."""
 
     model_config = STRICT
 
@@ -92,7 +89,7 @@ class ActionRecord(BaseModel):
 
     @model_validator(mode="after")
     def _targeted_actions_carry_a_bundle(self) -> ActionRecord:
-        """Without this the record is unreplayable, which phase 5 discovers far too late."""
+        """Without a bundle the action cannot be replayed, and the recorder would find out too late."""
         if self.action_kind in TARGETED_ACTIONS and self.bundle is None:
             raise ValueError(
                 f"action {self.action_kind!r} acts on a control and must carry the bundle "
@@ -103,7 +100,7 @@ class ActionRecord(BaseModel):
 
     @model_validator(mode="after")
     def _no_ref_survives_into_the_bundle(self) -> ActionRecord:
-        """design rule 9, enforced at the boundary rather than hoped for."""
+        """Refuse a bundle that still contains the snapshot ref it was built from."""
         if self.bundle is None or not self.ref_used:
             return self
         serialized = self.bundle.model_dump_json()
@@ -117,7 +114,7 @@ class ActionRecord(BaseModel):
 
 
 class TranscriptEvent(BaseModel):
-    """One thing that happened, in order. The narrative a human reads when debugging."""
+    """One thing that happened, in order. What a person reads when debugging a run."""
 
     model_config = STRICT
 
@@ -130,8 +127,8 @@ class TranscriptEvent(BaseModel):
 class DeclaredCapability(BaseModel):
     """What the model declared when it called finish.
 
-    Kept apart from the Capability itself. This is a claim the model made; phase 5 decides
-    whether the recorded run supports it.
+    Kept separate from the Capability. It is what the model claimed, and the recorder decides
+    whether the run backs it up.
     """
 
     model_config = STRICT
@@ -144,11 +141,10 @@ class DeclaredCapability(BaseModel):
 
 
 class DiscoveryTranscript(BaseModel):
-    """The whole record of one run.
+    """The full record of one run.
 
-    Deliberately not a Capability. This holds everything that happened including the dead
-    ends, while a Capability holds only the flow that worked. Keeping them separate is what
-    lets phase 5 compile rather than merely rename.
+    Not a Capability. This keeps everything, dead ends included, while a Capability only keeps
+    the flow that worked.
     """
 
     model_config = ConfigDict(extra="forbid")

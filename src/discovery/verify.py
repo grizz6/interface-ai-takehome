@@ -1,17 +1,14 @@
-"""Check what the model claimed when it called finish, against the page it is standing on.
+"""Check what the model claimed at finish against the page that is actually on screen.
 
-A model that says it is done is making a claim, not reporting a fact. Two of those claims are
-load bearing and both are cheap to check right now and expensive to discover later.
+When the model says it is done, two things are worth checking now, while it is cheap.
 
-A checkpoint that has never once held is a guess. It will be asserted on every future replay
-of this capability, and if it does not hold on the very screen it was written for, it will
-never hold anywhere.
+The checkpoint will be tested on every future replay. If it does not pass on the screen it
+was written for, it will never pass anywhere.
 
-An output that cannot be extracted from the page it was declared on is broken before replay
-has run once. Declaring it and finding out in production is the failure this whole project
-exists to avoid.
+An output that cannot be read from the page it was declared on is broken before replay ever
+runs, and would otherwise only be found in production.
 
-So both are executed here, against the live surface, before any success is accepted.
+So both are run here against the live page before a run counts as a success.
 """
 from __future__ import annotations
 
@@ -67,7 +64,7 @@ def verify_finish(
         description=str(payload.get("description") or "the goal was reached"),
     )
 
-    # (b) and it must actually hold, right now, on the page you are standing on
+    # (b) and it has to pass on the page that is on screen now
     try:
         holds = bool(surface.evaluate(signal))
     except (LocatorAmbiguous, LocatorUnresolved) as exc:
@@ -79,7 +76,7 @@ def verify_finish(
             "first. Look at the screen again and choose something that is actually on it."
         )
 
-    # (c) every declared output must extract, here, now
+    # (c) every declared output has to be readable from this page
     try:
         inputs = [ParamSpec(**item) for item in payload.get("inputs") or []]
     except ValidationError as exc:
@@ -152,12 +149,11 @@ def _build_output(raw: dict[str, Any], *, surface: Any, observation: Any) -> Out
 def _unparameterized_values(
     goal: str, typed_values: list[str], inputs: list[ParamSpec]
 ) -> list[str]:
-    """Values taken from the goal and typed into the page that were never declared.
+    """Values from the goal that were typed into the page but never declared as inputs.
 
-    A warning rather than a failure on purpose. The mapping from a typed literal back to a
-    parameter is a guess: the model types a value, it does not tell us which parameter it
-    came from. Guessing wrong and failing a good run would be worse than letting a reviewer
-    see the note.
+    Only a warning. The model types a value without saying which parameter it belongs to, so
+    matching them up is a guess, and failing a good run on a wrong guess would be worse than
+    leaving a note for the reviewer.
     """
     from_goal = sorted({value for value in typed_values if value and value in goal})
     if not from_goal:

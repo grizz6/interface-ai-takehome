@@ -1,31 +1,23 @@
-"""Load the policy from disk, validated on the way in.
+"""Load the policy file and validate it.
 
-A malformed allowlist is a configuration error, and a configuration error that surfaces on
-the first blocked action surfaces halfway through a run against a live system. Loading
-through PolicyConfig means a bad regex, an unknown action kind or a misspelled risk policy is
-rejected when the file is read, before a browser has even been launched.
+If a broken allowlist only showed up at the first blocked action, it would show up halfway
+through a run. Loading through PolicyConfig means a bad regex, an unknown action type or a
+misspelled risk policy is caught when the file is read, before a browser starts.
 
-WHY THE ERROR SCREENS ARE ALLOWED, which looks wrong at first glance:
+Why the error pages are allowed:
 
-`/maintenance`, `/maintenance/continue` and `/session-expired` are all permitted, even though
-every one of them is a failure state. That is deliberate and it is the difference between a
-recoverable condition and a hard failure.
+`/maintenance`, `/maintenance/continue` and `/session-expired` are all allowed, even though
+they are error pages. The maintenance recovery works by landing on the notice and clicking
+Continue. If those paths were denied, the policy would block the recovery: the run lands on
+the page, the arrival check refuses it, and something the run knows how to handle turns into a
+PolicyViolation. The same goes for the session expired page, which a handoff needs to reach.
+The allowlist says where a run is allowed to be, not where things are going well. See
+DECISIONS.md 0009.
 
-The interstitial recovery works by navigating to the maintenance notice and clicking Continue,
-which is how a run absorbs a transient interstitial and carries on. If those paths were denied,
-the gate would block our own recovery: the run would arrive at the maintenance screen, the
-arrival check would refuse the URL, and a condition the system is designed to handle would be
-converted into a PolicyViolation. The same applies to the session expired screen, which an
-escalation needs to be able to reach in order to hand a human a session to repair.
-
-The rule underneath is that the allowlist describes where the agent may legitimately BE, not
-where things are going well. Denying a path you will predictably land on does not prevent
-landing there; it only removes your ability to act once you have.
-
-PATTERNS ARE REGULAR EXPRESSIONS, NOT GLOBS. PolicyGate matches with re.search, so a bare "/"
-would match every path ever and make the rest of the allowlist decorative. Each entry is
-therefore anchored: "/member/*" is written "^/member(/.*)?$" so it covers /member/100001 and
-/member/100001/subaccount without also matching /x/member-notes.
+Patterns are regular expressions, not globs. PolicyGate uses re.search, so a bare "/" would
+match every path and make the rest of the list pointless. So entries are anchored: "/member/*"
+is written "^/member(/.*)?$", which covers /member/100001 and /member/100001/subaccount but not
+/x/member-notes.
 """
 from __future__ import annotations
 
@@ -44,7 +36,7 @@ class PolicyConfigError(ValueError):
 
 
 def load_policy_config(path: Path | str = DEFAULT_POLICY_PATH) -> PolicyConfig:
-    """Read and validate a policy file. Raises PolicyConfigError rather than returning junk."""
+    """Read and validate a policy file, raising PolicyConfigError if anything is wrong."""
     location = Path(path)
     try:
         raw = location.read_text()

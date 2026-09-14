@@ -1,17 +1,15 @@
-"""The guardrail the model cannot talk its way past.
+"""The policy check, which the model cannot talk its way past.
 
-design rule 3 puts this inside the surface layer rather than in a prompt, because a
-constraint written in a system prompt is a request and a constraint written in Python is a
-rule. WebSurface.act calls check() before it touches Playwright at all.
+It runs inside the surface, not in the prompt. A rule in a prompt is a request; a rule in
+Python is enforced. WebSurface.act calls check() before touching Playwright.
 
-The gate is a pure function of config plus action. It performs no I/O and knows nothing about
-a browser, which is what makes it exhaustively testable without one.
+The check only looks at the config and the action. It does no I/O and knows nothing about a
+browser, so it can be tested thoroughly without one.
 
-KNOWN LIMIT, stated here because it matters. Being pure, the gate cannot see the current page.
-Host and path are therefore enforced at navigation boundaries: check() inspects the URL of a
-NavigateAction, and WebSurface calls check_url() again on the URL that a click actually landed
-on. A click that triggers navigation is caught on arrival, not before departure. Closing that
-gap properly needs interception at the network layer, which is out of scope here.
+Limit: because it cannot see the page, host and path are checked when navigation happens.
+check() looks at a NavigateAction's URL, and WebSurface calls check_url() again on wherever a
+click actually ended up. So a click that navigates somewhere denied is caught on arrival, not
+before it leaves. Stopping it earlier would need network interception, which I did not build.
 """
 from __future__ import annotations
 
@@ -38,7 +36,7 @@ _ACTION_KINDS: dict[str, ActionType] = {
 
 
 class Allowed(BaseModel):
-    """The action may proceed. `risky` is advisory telemetry, not permission."""
+    """The action can go ahead. `risky` is just a note, not a permission."""
 
     model_config = STRICT
     decision: Literal["allowed"] = "allowed"
@@ -47,7 +45,7 @@ class Allowed(BaseModel):
 
 
 class Blocked(BaseModel):
-    """The action must not proceed. `rule` names which constraint refused it."""
+    """The action must not go ahead. `rule` says which rule refused it."""
 
     model_config = STRICT
     decision: Literal["blocked"] = "blocked"
@@ -72,9 +70,8 @@ class PolicyGate:
         authority = parsed.netloc or ""
         path = parsed.path or "/"
 
-        # Both forms are accepted so an allowlist can be written either way. Listing
-        # "127.0.0.1:8080" pins the port, which is the stricter and usually wanted form;
-        # listing "127.0.0.1" allows any port on that host.
+        # Both forms work. "127.0.0.1:8080" allows only that port, which is usually what you
+        # want, and "127.0.0.1" allows any port on that host.
         if host and host not in self.config.allowed_hosts:
             if authority not in self.config.allowed_hosts:
                 return Blocked(

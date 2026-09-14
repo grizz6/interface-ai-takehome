@@ -1,20 +1,17 @@
-"""The tools the model is given, with their schemas derived from the artifact models.
+"""The tools the model gets, with schemas built from the capability models.
 
-Two rules shape this module and both are worth stating before the code.
+The model never writes a locator. It points at a ref, and the surface turns that into a
+LocatorBundle with describe(). So no tool here takes a LocatorBundle: `finish` takes a `ref`
+where OutputSpec has a locator, and the checkpoint only offers check types that need no
+locator. If the model wrote locators, choosing a tier would happen in the prompt instead of in
+Python. See DECISIONS.md 0011.
 
-THE MODEL NEVER AUTHORS A LOCATOR. It points at a ref and the surface converts that ref into
-a durable LocatorBundle through describe(). So no tool schema here contains a LocatorBundle,
-even where the underlying artifact model has one: `finish` takes a `ref` where OutputSpec
-takes an extraction locator, and the checkpoint signal offers only the kinds that need no
-locator. Letting the model write locators would put the tier selection in the prompt, where
-it can be argued with, instead of in Python where it cannot.
+The schemas are generated, not copied. `finish` gets its shapes from ParamSpec, OutputSpec,
+ExtractionSpec and Signal through `model_json_schema()`, with some fields removed. Add a field
+to ParamSpec and `finish` accepts it on the next run, so the tools and the capability format
+cannot drift apart.
 
-SCHEMAS ARE DERIVED, NOT TRANSCRIBED. `finish` takes its shapes from ParamSpec, OutputSpec,
-ExtractionSpec and Signal by way of `model_json_schema()`, then prunes. Adding a field to
-ParamSpec changes what `finish` accepts on the next run with nothing to remember, which is
-the only way the tool contract and the artifact schema stay in step.
-
-THERE IS NO WAIT TOOL, deliberately. See DECISIONS.md 0010.
+There is no wait tool. See DECISIONS.md 0010.
 """
 from __future__ import annotations
 
@@ -26,7 +23,7 @@ from src.models.capability import ExtractionSpec, OutputSpec, ParamSpec, Signal
 
 
 class ToolName(StrEnum):
-    """Every tool the model may call. The loop dispatches on this, not on strings."""
+    """Every tool the model can call. The loop switches on this rather than raw strings."""
 
     LOOK = "look"
     NAVIGATE = "navigate"
@@ -39,11 +36,10 @@ class ToolName(StrEnum):
 
 
 AUTHORABLE_SIGNAL_KINDS = ["text_present", "text_absent", "url_matches", "aria_matches"]
-"""Signal kinds a model can author without inventing a locator.
+"""Check types the model can use without writing a locator.
 
-element_present and element_absent are excluded because Signal requires a locator for them,
-and the model has no business producing one. Offering a kind that will always fail validation
-would burn a turn to teach a lesson the schema already knows.
+element_present and element_absent need a locator, and the model should not write one.
+Offering a type that always fails validation would just waste a turn.
 """
 
 
@@ -51,10 +47,10 @@ would burn a turn to teach a lesson the schema already knows.
 # deriving schemas from the pydantic models
 # --------------------------------------------------------------------------
 def inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
-    """Resolve every $ref against $defs and return a self contained schema.
+    """Replace every $ref with its $defs entry, giving a schema with no references.
 
-    Function declaration schemas travel to a provider that cannot be assumed to resolve
-    internal references, so nothing may leave here holding a $ref.
+    We cannot count on the provider resolving references in tool schemas, so nothing leaves
+    here with a $ref in it.
     """
     defs: dict[str, Any] = schema.get("$defs", {})
 
@@ -64,8 +60,7 @@ def inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
             if isinstance(ref, str) and ref.startswith("#/$defs/"):
                 name = ref.split("/")[-1]
                 if name in seen:
-                    # A self referencing model would otherwise expand forever. None of ours
-                    # does today, so this is a guard rather than a code path.
+                    # Stops a model that refers to itself expanding forever. None do today.
                     return {"type": "object"}
                 target = dict(defs.get(name, {}))
                 merged = {k: v for k, v in node.items() if k != "$ref"}
@@ -81,7 +76,7 @@ def inline_defs(schema: dict[str, Any]) -> dict[str, Any]:
 
 
 def derive(model: type, *, drop: tuple[str, ...] = ()) -> dict[str, Any]:
-    """A self contained JSON Schema for a pydantic model, minus the named properties."""
+    """A JSON Schema with no references for a pydantic model, minus the named properties."""
     schema = inline_defs(model.model_json_schema())  # type: ignore[attr-defined]
     properties = {k: v for k, v in schema.get("properties", {}).items() if k not in drop}
     required = [r for r in schema.get("required", []) if r not in drop]
@@ -92,7 +87,7 @@ def derive(model: type, *, drop: tuple[str, ...] = ()) -> dict[str, Any]:
 
 
 def _checkpoint_schema() -> dict[str, Any]:
-    """Signal, restricted to the kinds a model can author."""
+    """Signal, limited to the check types the model can use."""
     schema = derive(Signal, drop=("locator", "frame_path"))
     schema["properties"]["kind"] = {
         "type": "string",
@@ -107,7 +102,7 @@ def _checkpoint_schema() -> dict[str, Any]:
 
 
 def _output_schema() -> dict[str, Any]:
-    """OutputSpec, with the extraction locator replaced by a ref the surface will convert."""
+    """OutputSpec, with the locator swapped for a ref that the surface turns into one."""
     extraction = derive(ExtractionSpec, drop=("locator",))
     extraction["properties"]["ref"] = {
         "type": "string",
