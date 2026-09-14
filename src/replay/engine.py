@@ -106,6 +106,10 @@ class _Run:
     # Steps a human has explicitly approved. Approval waives the approval rule for one step
     # and nothing else: the allowlist, the denied paths and the action list still apply.
     approved_steps: set[int] = field(default_factory=set)
+    # Set once any irreversible step has run. Starting the flow over after that could repeat it.
+    irreversible_done: bool = False
+    # How many times each restarting recovery has fired, bounded by its max_attempts.
+    restarts: dict[str, int] = field(default_factory=dict)
 
     @property
     def evidence(self) -> EvidenceRef:
@@ -240,6 +244,21 @@ def _outcome_result(run: _Run, outcome: BusinessOutcomeSpec, index: int) -> RunR
     )
 
 
+class _RestartFlow(Exception):
+    """Raised by a recovery that can only be answered by starting the flow again."""
+
+    def __init__(self, rule: RecoveryRule) -> None:
+        super().__init__(rule.name)
+        self.rule = rule
+
+
+def _entry_url(capability: Capability, params: dict[str, Any]) -> str:
+    return _template(
+        capability.surface.base_url.rstrip("/") + "/" + capability.surface.entry_path.lstrip("/"),
+        params,
+    )
+
+
 def _apply_recoveries(run: _Run, index: int) -> str | None:
     """Fire any recovery whose detect signal matches, bounded by max_attempts.
 
@@ -253,6 +272,15 @@ def _apply_recoveries(run: _Run, index: int) -> str | None:
     """
     for rule in run.capability.recoveries:
         if rule.applies_to_steps is not None and index not in rule.applies_to_steps:
+            continue
+        if rule.action is RecoveryAction.REAUTHENTICATE:
+            # An expired session is not something to click past. Whatever the flow had done is
+            # gone with the session, so the only honest recovery is to start again from the
+            # entry screen. The caller decides whether that is still safe.
+            if run.surface.evaluate(rule.detect):
+                run.recoveries.append(rule.name)
+                run.note("recovery", rule=rule.name, step_index=index, restart=True)
+                raise _RestartFlow(rule)
             continue
         fired = False
         for _attempt in range(rule.max_attempts):
@@ -373,6 +401,8 @@ def _run_step(run: _Run, step: Step) -> RunResult | None:
             return resumed
 
         if resumed is ResumeAction.SKIP:
+            if step.risk is RiskClass.RISKY_IRREVERSIBLE:
+                run.irreversible_done = True
             run.traces.append(
                 StepTrace(
                     index=step.index,
@@ -433,6 +463,8 @@ def _attempt_step(run: _Run, step: Step) -> RunResult | None | _Escalation:
                 action, wait=step.wait, risk=step.risk,
                 approved=index in run.approved_steps,
             )
+            if step.risk is RiskClass.RISKY_IRREVERSIBLE:
+                run.irreversible_done = True
             break
         except LocatorAmbiguous as exc:
             _capture_failure(run, index)
@@ -462,6 +494,15 @@ def _attempt_step(run: _Run, step: Step) -> RunResult | None | _Escalation:
             # an answer: a rejected form never shows the review page. Ask whether a declared
             # outcome is on screen before retrying or failing, or 0023's promise that an answer
             # is never reported as a crash does not hold for any step that waits on text.
+            # Recoveries first, as after a completed step: an expired session or an interstitial
+            # can be what the wait was stuck behind.
+            stuck_on = _apply_recoveries(run, index)
+            if stuck_on is not None:
+                return _Escalation(
+                    StuckReason.RECOVERY_EXHAUSTED,
+                    f"the recovery {stuck_on!r} ran its attempts at step {index} and its "
+                    "condition is still on screen",
+                )
             outcome = _matching_outcome(run, index)
             if outcome is not None:
                 run.traces.append(
@@ -623,6 +664,50 @@ def replay(
     return result
 
 
+def _restart(
+    run: _Run, step: Step, rule: RecoveryRule
+) -> RunResult | ResumeAction | None:
+    """Start the flow again from the entry screen, or escalate if that is no longer safe.
+
+    Returns None when the run should restart at step 0. Two things make a restart unsafe: an
+    irreversible step has already run, so starting over could do it twice (0024), or this rule
+    has already restarted the run as many times as it allows.
+    """
+    used = run.restarts.get(rule.name, 0) + 1
+    run.restarts[rule.name] = used
+    why: str | None = None
+    if run.irreversible_done:
+        why = (
+            f"the recovery {rule.name!r} would start the flow again at step 0, but an "
+            "irreversible step has already run and starting over could repeat it"
+        )
+    elif used > rule.max_attempts:
+        why = (
+            f"the recovery {rule.name!r} has already restarted the flow {rule.max_attempts} "
+            f"time(s) and its condition came back at step {step.index}"
+        )
+    if why is not None:
+        run.note("restart_refused", rule=rule.name, step_index=step.index)
+        return _escalate(run, step, _Escalation(StuckReason.RECOVERY_EXHAUSTED, why))
+
+    entry = _entry_url(run.capability, run.params)
+    try:
+        run.surface.act(NavigateAction(url=entry))
+    except (ActionTimeout, PolicyViolation) as exc:
+        _capture_failure(run, step.index)
+        return FailureResult(
+            error_class=FailureClass.SURFACE_UNAVAILABLE,
+            step_index=step.index,
+            action=ActionType.NAVIGATE,
+            expected=f"the entry screen to load again after {rule.name!r}",
+            observed=str(exc),
+            steps=run.traces,
+            evidence=run.evidence,
+        )
+    run.note("restart_flow", rule=rule.name, from_step=step.index, attempt=used)
+    return None
+
+
 def _execute(
     run: _Run,
     capability: Capability,
@@ -658,11 +743,26 @@ def _execute(
     if drift is not None:
         return drift
 
-    # 2. the steps
-    for step in capability.steps:
-        result = _run_step(run, step)
+    # 2. the steps. A restarting recovery sends the run back to step 0.
+    position = 0
+    while position < len(capability.steps):
+        step = capability.steps[position]
+        try:
+            result = _run_step(run, step)
+        except _RestartFlow as restart:
+            decision = _restart(run, step, restart.rule)
+            if decision is None:
+                position = 0
+                continue
+            if isinstance(decision, ResumeAction):
+                # A person dealt with it during the handoff. Carry on from this step, or past it
+                # if they completed it themselves.
+                position += 1 if decision is ResumeAction.SKIP else 0
+                continue
+            return decision
         if result is not None:
             return result
+        position += 1
 
     # 4. the checkpoint the whole flow is judged on
     if not surface.evaluate(capability.checkpoint.signal):
