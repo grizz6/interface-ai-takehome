@@ -1,15 +1,14 @@
 # evidence-inputs
 
-Scripted model transcripts for `--dry-run`. Each drives the real WebSurface, the real policy
-gate and the real evidence writer against the live target app. Only the model is replaced.
+Scripted model replies for `--dry-run`. They run against the live target app using the real
+WebSurface, policy check and evidence writer. Only the model is swapped out.
 
-| Script | Exit | What it proves |
+| Script | Exit | What it shows |
 |---|---|---|
-| `happy-path.json` | 0 | The whole vertical slice with no model: navigate, click, type, search, then a `finish` whose checkpoint is evaluated and whose declared output is actually extracted from the live page |
-| `failure-path.json` | 20 | The policy gate refusing a route, the refusal being fed back to the model rather than crashing the run, and the stall detector firing when three consecutive observations are identical |
+| `happy-path.json` | 0 | A full run with no model: navigate, click, type, search, then `finish`, where the success check runs on the live page and the declared output is read from it |
+| `failure-path.json` | 20 | The policy refusing a route, the refusal going back to the model as a message instead of crashing the run, and the run stopping after the page looks the same three times in a row |
 
-The refs in `happy-path.json` (`e19`, `f1e34`, `f1e38`, `f3e28`) are per-snapshot handles, and
-they are only reproducible because the navigation sequence is fixed and the target app is
-deterministic. They are not durable identifiers and nothing in `capabilities/` may contain
-one. That is invariant 9, and it is the reason a scripted transcript can hardcode a ref while
-a recorded artifact never can.
+The refs in `happy-path.json` (`e19`, `f1e34`, `f1e38`, `f3e28`) only exist within one snapshot.
+They come out the same every time only because the steps are fixed and the app always renders the
+same way. A saved capability must never contain one, which is why a script can hardcode a ref and
+a recorded capability cannot.
