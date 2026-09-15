@@ -386,7 +386,7 @@ have not measured how often replays fail over many runs. Both are covered in `RE
 
 ## Where to look next
 
-- `evidence/curated/` has nine sample runs and an `INDEX.md`. The capability compiled from the
+- `evidence/curated/` has ten sample runs and an `INDEX.md`. The capability compiled from the
   real discovery run is saved next to it in `01-discovery-real/`. `evidence/README.md` says
   which part of the brief each run covers.
 - `REPORT.md` is the design write-up, under the brief's seven headings.

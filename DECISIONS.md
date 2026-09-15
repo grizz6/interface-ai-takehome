@@ -971,7 +971,7 @@ any step runs.
 it actually used. Two records, because `meta.json` is written by whoever creates the writer, and
 evidence that only rests on the caller's word is weaker.
 
-Runs 02 to 09 all carry the field. 02 was re-run first, and 03 to 06 were re-run afterwards for the
+Runs 02 to 10 all carry the field. 02 was re-run first, and 03 to 06 were re-run afterwards for the
 same reason.
 
 ## 0044. The capability catalog only reads, and running stays in replay
@@ -1146,3 +1146,18 @@ here rather than made.
 Weak spots: a person taking over cannot answer a pop-up either, because the listener closes it
 before they see it. And a pop-up raised while the fingerprint check loads the first page is
 reported as step 0.
+
+## 0050. failure/context.json named step -1 for step 0 and for every business outcome
+
+Final fixes. Found while producing sample run 10.
+
+`write_failure_artifacts` read the step as `step_index or -1`. Step 0 is falsy, so a failure at
+the first step was written as -1, and a business outcome, which records `detected_at_step`
+rather than `step_index`, was always -1. Four committed sample runs (03, 05, 07, 08) pointed at
+the wrong step, and for outcomes the engine also could not find the step to report which locator
+tiers matched. Both places now use one helper that reads either field and keeps 0 as 0, with a
+test. The four runs were re-run from the fixed commit.
+
+The same run showed that replay without a session never logged why it stopped: NeedsHumanResult
+has no field for the reason, so a pop-up's text only appeared as a raw event. Replay now writes a
+`needs_human` line with the reason before returning.

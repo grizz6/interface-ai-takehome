@@ -2,11 +2,11 @@
   "code": "member_restricted",
   "detected_at_step": 3,
   "evidence": {
-    "directory": "evidence/20260913-014533-ee2d",
-    "log_path": "evidence/20260913-014533-ee2d/run.jsonl",
-    "run_id": "20260913-014533-ee2d",
+    "directory": "evidence/20260915-000311-6c8c",
+    "log_path": "evidence/20260915-000311-6c8c/run.jsonl",
+    "run_id": "20260915-000311-6c8c",
     "screenshot_paths": [
-      "evidence/20260913-014533-ee2d/screenshots/000.png"
+      "evidence/20260915-000311-6c8c/screenshots/000.png"
     ]
   },
   "kind": "business_outcome",
@@ -17,7 +17,7 @@
       "action": "navigate",
       "attempt_count": 1,
       "description": "navigate",
-      "duration_ms": 21,
+      "duration_ms": 9,
       "index": 0,
       "locator_strategy_used": null,
       "recovered_by": null
@@ -26,7 +26,7 @@
       "action": "click",
       "attempt_count": 1,
       "description": "click",
-      "duration_ms": 30,
+      "duration_ms": 26,
       "index": 1,
       "locator_strategy_used": "role_name",
       "recovered_by": null
@@ -35,7 +35,7 @@
       "action": "type",
       "attempt_count": 1,
       "description": "type <param:member_id>",
-      "duration_ms": 5,
+      "duration_ms": 6,
       "index": 2,
       "locator_strategy_used": "role_name",
       "recovered_by": null
@@ -44,7 +44,7 @@
       "action": "click",
       "attempt_count": 1,
       "description": "click",
-      "duration_ms": 37,
+      "duration_ms": 39,
       "index": 3,
       "locator_strategy_used": "role_name",
       "recovered_by": null

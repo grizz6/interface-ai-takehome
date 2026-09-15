@@ -2,8 +2,8 @@
   "allow_draft": true,
   "capability_id": "lookup-member-savings-balance",
   "capability_version": "1.2.0",
-  "exit_code": 40,
-  "finished_at": "2026-09-15T00:03:11.083550Z",
+  "exit_code": 20,
+  "finished_at": "2026-09-15T00:03:24.765704Z",
   "git_commit": "80737f3e9994f2f0de1405e9aa92b655878f41eb",
   "kind": "replay",
   "model": null,
@@ -17,8 +17,8 @@
   ],
   "policy_path": "config/policy.json",
   "policy_sha256": "1ae61588b4e23052d024a62fa29b9d18ba56a6ac7a08071257f0e69f5707a44f",
-  "result_kind": "failure",
-  "run_id": "20260915-000310-6a6d",
+  "result_kind": "needs_human",
+  "run_id": "20260915-000324-efed",
   "schema_version": "1.0",
-  "started_at": "2026-09-15T00:03:10.689389Z"
+  "started_at": "2026-09-15T00:03:24.290667Z"
 }

@@ -1,13 +1,21 @@
 {
-  "action": null,
+  "action": "click",
   "detail": {
     "code": "validation_rejected",
     "message": "The application rejected the submitted values and showed field errors."
   },
-  "expected": null,
+  "expected": "The review screen is showing, so the form validated.",
   "observed": null,
   "result_kind": "business_outcome",
-  "step_index": -1,
-  "strategies_tried": [],
+  "step_index": 4,
+  "strategies_tried": [
+    {
+      "container_matched": null,
+      "matched": 1,
+      "note": null,
+      "strategy": "role_name",
+      "tier_index": 0
+    }
+  ],
   "url": "http://localhost:8080/member/<param:redacted_0>/subaccount"
 }

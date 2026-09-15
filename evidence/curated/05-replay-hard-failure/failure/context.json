@@ -1,12 +1,12 @@
 {
-  "action": null,
+  "action": "navigate",
   "detail": {
     "error_class": "app_error"
   },
   "expected": "the application to respond successfully",
   "observed": "it answered HTTP 500",
   "result_kind": "failure",
-  "step_index": -1,
+  "step_index": 0,
   "strategies_tried": [],
   "url": "http://localhost:8080/"
 }

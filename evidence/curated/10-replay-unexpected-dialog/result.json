@@ -1,0 +1,15 @@
+{
+  "evidence": {
+    "directory": "evidence/20260915-000324-efed",
+    "log_path": "evidence/20260915-000324-efed/run.jsonl",
+    "run_id": "20260915-000324-efed",
+    "screenshot_paths": [
+      "evidence/20260915-000324-efed/screenshots/000.png"
+    ]
+  },
+  "intervention_id": "20260915-000324-efed-unknown_state-0",
+  "kind": "needs_human",
+  "reason": "unknown_state",
+  "step_index": 0,
+  "steps": []
+}

@@ -1,0 +1,13 @@
+{
+  "action": "navigate",
+  "detail": {
+    "intervention_id": "20260915-000324-efed-unknown_state-0",
+    "reason": "unknown_state"
+  },
+  "expected": null,
+  "observed": null,
+  "result_kind": "needs_human",
+  "step_index": 0,
+  "strategies_tried": [],
+  "url": "http://localhost:8080/"
+}
