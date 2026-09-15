@@ -229,6 +229,15 @@ def test_a_business_outcome_is_labelled_as_one_inside_the_failure_directory(
     context = json.loads((writer.directory / "failure" / "context.json").read_text())
     assert context["result_kind"] == "business_outcome"
     assert context["detail"]["code"] == "member_not_found"
+    assert context["step_index"] == result.detected_at_step
+
+
+def test_a_result_at_step_zero_is_not_written_as_step_minus_one() -> None:
+    from src.evidence.failure import result_step
+
+    assert result_step(type("R", (), {"step_index": 0})()) == 0
+    assert result_step(type("R", (), {"detected_at_step": 3})()) == 3
+    assert result_step(type("R", (), {})()) == -1
 
 
 # ---------------------------------------------------------------------------

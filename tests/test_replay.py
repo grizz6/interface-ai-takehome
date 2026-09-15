@@ -178,6 +178,8 @@ def test_an_unexpected_confirm_dialog_stops_the_run_instead_of_answering_it(
     dialogs = [e for e in events if e["kind"] == "dialog"]
     assert [d["dialog"] for d in dialogs] == ["confirm"]
     assert "Stay signed in?" in dialogs[0]["message"]
+    stopped = [e for e in events if e["kind"] == "needs_human"]
+    assert stopped and "Stay signed in?" in stopped[0]["why"], "the log should say why it stopped"
     assert surface.take_dialogs() == [], "the engine should have taken what the surface saw"
 
 

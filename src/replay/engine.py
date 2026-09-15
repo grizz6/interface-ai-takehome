@@ -56,7 +56,7 @@ from src.surface.actions import (
     TypeAction,
 )
 from src.escalation.session import EscalationContext
-from src.evidence.failure import write_failure_artifacts
+from src.evidence.failure import result_step, write_failure_artifacts
 from src.replay.escalate import (
     ResumeAction,
     decide_resume,
@@ -348,6 +348,9 @@ def _escalate(
     with the reason.
     """
     if run.session is None:
+        # Nobody to hand over to. Log why, since the result itself has no room for the reason.
+        run.note("needs_human", step_index=step.index, reason=escalation.reason.value,
+                 why=escalation.why)
         return NeedsHumanResult(
             intervention_id=f"{run.evidence.run_id}-{escalation.reason.value}-{step.index}",
             reason=escalation.reason,
@@ -686,8 +689,7 @@ def replay(
         session=session,
     )
     result = _execute(run, capability, params, surface, allow_draft)
-    step = next((s for s in capability.steps
-                 if s.index == int(getattr(result, "step_index", -1) or -1)), None)
+    step = next((s for s in capability.steps if s.index == result_step(result)), None)
     write_failure_artifacts(surface, run.sink, result, step=step,
                             on_error=lambda: run.note("failure_capture_incomplete"))
     return result

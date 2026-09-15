@@ -77,6 +77,19 @@ def probe_bundle(surface: Any, bundle: Any) -> list[TierProbe]:
         ]
 
 
+def result_step(result: Any) -> int:
+    """The step a result is about, or -1 if it names none.
+
+    A failure has `step_index` and a business outcome has `detected_at_step`. Step 0 is a real
+    step, so this must not use `or`, which used to turn 0 into -1.
+    """
+    for field in ("step_index", "detected_at_step"):
+        value = getattr(result, field, None)
+        if isinstance(value, int):
+            return value
+    return -1
+
+
 def write_failure_artifacts(
     surface: Any,
     sink: Any,
@@ -96,7 +109,7 @@ def write_failure_artifacts(
     if writer is None:
         return
 
-    index = int(getattr(result, "step_index", -1) or -1)
+    index = result_step(result)
     dom: str | None = None
     aria: str | None = None
     png: bytes | None = None
